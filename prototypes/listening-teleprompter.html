@@ -1,0 +1,746 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Listening Teleprompter</title>
+<style>
+  /* ---------- Theme (light by default, dark via [data-theme="dark"]) ---------- */
+  :root {
+    --bg: #ffffff;
+    --surface: #f4f5f7;
+    --border: #c9ced6;
+    --text: #0b0d10;
+    --muted: #4b5563;          /* grey "not yet reached" words, 7:1 on white */
+    --current-bg: #fff1a8;
+    --current-line: #0b0d10;
+    --correct: #0f6b2f;
+    --wrong: #b3261e;
+    --correct-prov: #5f9b72;   /* lighter, provisional (interim) colours */
+    --wrong-prov: #d77a74;
+    --accent: #1f4fd1;
+    --accent-text: #ffffff;
+    --focus: #1f4fd1;
+    --prompter-size: 36px;
+    color-scheme: light;
+  }
+  [data-theme="dark"] {
+    --bg: #0d1014;
+    --surface: #171b21;
+    --border: #3a414c;
+    --text: #f5f7fa;
+    --muted: #a3acb9;
+    --current-bg: #4a3f00;
+    --current-line: #ffe066;
+    --correct: #4ade80;
+    --wrong: #ff7b72;
+    --correct-prov: #2f8a52;
+    --wrong-prov: #a8524c;
+    --accent: #8ab4ff;
+    --accent-text: #0d1014;
+    --focus: #8ab4ff;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 1rem 1rem 3rem; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  h1 { font-size: 1.5rem; margin: 0.25rem 0; }
+  h2 { font-size: 1.15rem; margin: 0 0 0.75rem; }
+  button, input, textarea, select { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+  .btn {
+    min-height: 44px; padding: 0.5rem 1.1rem; border-radius: 10px;
+    border: 2px solid var(--border); background: var(--surface); font-weight: 600;
+  }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1rem; margin-top: 1rem; }
+  label { font-weight: 600; }
+  textarea {
+    width: 100%; min-height: 6rem; margin-top: 0.4rem; padding: 0.7rem; resize: vertical;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+  }
+  .hint { color: var(--muted); font-size: 0.9rem; margin: 0.4rem 0 0; }
+  .alert { border: 2px solid var(--wrong); color: var(--wrong); background: var(--surface); border-radius: 12px; padding: 0.8rem 1rem; font-weight: 600; margin-top: 1rem; }
+
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin-top: 1rem; }
+  .score { margin-left: auto; font-weight: 700; font-size: 1.1rem; }
+  .status { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--muted); font-weight: 600; }
+  .dot { width: 0.7rem; height: 0.7rem; border-radius: 50%; background: var(--border); }
+  .status.listening { color: var(--wrong); }
+  .status.listening .dot { background: var(--wrong); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity: 0.3; } }
+
+  /* ---------- Subtitles ---------- */
+  .prompter {
+    position: relative; margin-top: 1rem; padding: 1.2rem 1rem;
+    height: calc(var(--prompter-size) * 6.4 + 2.4rem); /* about 3 lines visible */
+    overflow-y: auto; scroll-behavior: smooth;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 18px;
+    font-size: var(--prompter-size); line-height: 1.25; text-align: center;
+  }
+  .word {
+    /* Each word is a little column: the "what you said" label sits above the script word */
+    display: inline-flex; flex-direction: column; align-items: center; vertical-align: bottom;
+    margin: 0 0.12em 0.35em; padding: 0 0.08em; border: 0; border-radius: 6px;
+    background: none; color: var(--muted); font-weight: 600; line-height: 1.2;
+  }
+  .said { font-size: 0.42em; line-height: 1.2; min-height: 1.2em; color: var(--wrong); font-weight: 700; white-space: nowrap; }
+  .word.current { background: var(--current-bg); color: var(--text); text-decoration: underline 0.08em var(--current-line); text-underline-offset: 0.15em; }
+  .word.correct { color: var(--correct); }
+  .word.wrong, .word.skipped { color: var(--wrong); }
+  .word.skipped .txt { text-decoration: line-through 0.06em; }
+  .word.skipped .said { font-style: italic; font-weight: 600; }
+  .word.prov-correct { color: var(--correct-prov); }
+  .word.prov-wrong, .word.prov-skipped { color: var(--wrong-prov); }
+  .word.prov-wrong .said, .word.prov-skipped .said { color: var(--wrong-prov); }
+
+  .settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+  .setting { display: grid; gap: 0.3rem; }
+  .setting-row { display: flex; align-items: center; gap: 0.75rem; }
+  input[type="range"] { flex: 1; min-height: 44px; accent-color: var(--accent); }
+  output { min-width: 4.5rem; font-weight: 700; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+  th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--border); }
+  td.said-cell { color: var(--wrong); font-weight: 600; }
+  .table-scroll { overflow-x: auto; }
+
+  .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  @media (max-width: 560px) {
+    :root { --prompter-size: 26px; }
+    .score { margin-left: 0; width: 100%; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .prompter { scroll-behavior: auto; }
+    .status.listening .dot { animation: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Listening Teleprompter</h1>
+    <button type="button" class="btn" id="themeBtn" aria-pressed="false">Dark mode</button>
+  </header>
+
+  <div id="unsupported" class="alert" role="alert" hidden>
+    This browser doesn't support speech recognition. Please open this page in Google Chrome or Microsoft Edge on a computer.
+  </div>
+
+  <section class="panel">
+    <label for="script">Your script</label>
+    <textarea id="script" rows="4">The sky is blue and the grass is green. Dream boldly. Start small. Keep going.</textarea>
+    <p class="hint">Paste your script, then press Start and read it aloud. Speech recognition is done by your browser's speech service (Chrome and Edge use an online service).</p>
+  </section>
+
+  <div class="toolbar">
+    <button type="button" class="btn btn-primary" id="startBtn">Start</button>
+    <button type="button" class="btn" id="pauseBtn" disabled>Pause</button>
+    <button type="button" class="btn" id="resetBtn">Reset</button>
+    <span class="status" id="status" role="status"><span class="dot" aria-hidden="true"></span><span id="statusText">Ready</span></span>
+    <span class="score" id="score" aria-live="polite">Accuracy: –</span>
+  </div>
+  <div id="error" class="alert" role="alert" hidden></div>
+
+  <div class="prompter" id="prompter" role="group" aria-label="Script. Use the arrow keys to move between words and Enter to jump to a word."></div>
+
+  <section class="panel settings" aria-label="Settings">
+    <div class="setting">
+      <label for="sensitivity">Matching sensitivity</label>
+      <div class="setting-row">
+        <input type="range" id="sensitivity" min="0" max="2" step="1" value="1" aria-valuetext="Normal" />
+        <output id="sensitivityOut" for="sensitivity">Normal</output>
+      </div>
+    </div>
+    <div class="setting">
+      <label for="fontSize">Text size</label>
+      <div class="setting-row">
+        <input type="range" id="fontSize" min="20" max="64" step="2" value="36" />
+        <output id="fontSizeOut" for="fontSize">36 px</output>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" id="summary" hidden aria-labelledby="summaryTitle">
+    <h2 id="summaryTitle" tabindex="-1">Summary</h2>
+    <p id="summaryStats"></p>
+    <div class="table-scroll">
+      <table id="summaryTable">
+        <thead><tr><th scope="col">Position</th><th scope="col">Expected</th><th scope="col">What was said</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<script>
+"use strict";
+
+/* =========================================================================
+   1. TEXT NORMALISATION
+   Both the script and the recognised speech go through normalise(), so
+   "Blue," and "blue" compare equal, and "3" compares equal to "three".
+   ========================================================================= */
+
+const ONES = ["zero","one","two","three","four","five","six","seven","eight","nine","ten",
+  "eleven","twelve","thirteen","fourteen","fifteen","sixteen","seventeen","eighteen","nineteen"];
+const TENS = ["","","twenty","thirty","forty","fifty","sixty","seventy","eighty","ninety"];
+
+/** 0–999 as words with no spaces ("25" → "twentyfive"), matching a de-hyphenated "twenty-five". */
+function numberToWords(n) {
+  if (n < 20) return ONES[n];
+  if (n < 100) return TENS[Math.floor(n / 10)] + (n % 10 ? ONES[n % 10] : "");
+  return ONES[Math.floor(n / 100)] + "hundred" + (n % 100 ? "and" + numberToWords(n % 100) : "");
+}
+
+function normalise(word) {
+  let w = word.toLowerCase().replace(/[’']/g, "").replace(/[^a-z0-9]/g, "");
+  if (/^\d{1,3}$/.test(w)) w = numberToWords(Number(w)); // "3" ↔ "three" (practical range only)
+  return w;
+}
+
+/* =========================================================================
+   2. FUZZY MATCHING
+   A spoken word counts as the expected word if it is:
+     (a) an exact match after normalising, or
+     (b) within a small Levenshtein edit distance (depends on word length and
+         the sensitivity setting), or
+     (c) a phonetic match (simplified Metaphone), so recogniser homophones
+         like "blew"/"blue" or "grate"/"great" aren't punished.
+   I use Metaphone rather than Soundex: Soundex is too loose for short words
+   (it treats "sky" and "say" as the same).
+   ========================================================================= */
+
+function levenshtein(a, b) {
+  if (a === b) return 0;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+/** Simplified Metaphone: a short consonant "sound code" for an English word. */
+function metaphone(word) {
+  let w = word.toUpperCase().replace(/[^A-Z]/g, "");
+  if (!w) return "";
+  if (/^(AE|GN|KN|PN|WR)/.test(w)) w = w.slice(1);
+  if (w[0] === "X") w = "S" + w.slice(1);
+  if (w.startsWith("WH")) w = "W" + w.slice(2);
+  const vowel = (c) => c !== "" && "AEIOU".includes(c); // "" (past the end) is not a vowel
+  let code = "";
+  for (let i = 0; i < w.length; i++) {
+    const c = w[i], next = w[i + 1] || "", next2 = w[i + 2] || "", prev = w[i - 1] || "";
+    if (c === prev && c !== "C") continue;                 // ignore doubled letters
+    switch (c) {
+      case "A": case "E": case "I": case "O": case "U": if (i === 0) code += c; break;
+      case "B": if (!(prev === "M" && i === w.length - 1)) code += "B"; break;
+      case "C":
+        if (next === "I" && next2 === "A") code += "X";
+        else if (next === "H") { code += prev === "S" ? "K" : "X"; i++; }
+        else if ("IEY".includes(next)) { if (prev !== "S") code += "S"; }
+        else code += "K";
+        break;
+      case "D": if (next === "G" && "EIY".includes(next2)) { code += "J"; i++; } else code += "T"; break;
+      case "G":
+        if (next === "H" && !vowel(next2)) break;           // silent GH ("night")
+        if (next === "N" && (i + 2 === w.length || w.slice(i + 1) === "NED")) break;
+        code += "IEY".includes(next) ? "J" : "K";
+        break;
+      case "H": if (vowel(next) && !"CSPTG".includes(prev)) code += "H"; break;
+      case "K": if (prev !== "C") code += "K"; break;
+      case "P": if (next === "H") { code += "F"; i++; } else code += "P"; break;
+      case "Q": code += "K"; break;
+      case "S":
+        if (next === "H") { code += "X"; i++; }
+        else if (next === "I" && (next2 === "O" || next2 === "A")) code += "X";
+        else code += "S";
+        break;
+      case "T":
+        if (next === "I" && (next2 === "O" || next2 === "A")) code += "X";
+        else if (next === "H") { code += "0"; i++; }       // "0" = the "th" sound
+        else if (!(next === "C" && next2 === "H")) code += "T";
+        break;
+      case "V": code += "F"; break;
+      case "W": case "Y": if (vowel(next)) code += c; break;
+      case "X": code += "KS"; break;
+      case "Z": code += "S"; break;
+      default: code += c;                                   // F J L M N R
+    }
+  }
+  return code;
+}
+
+// Sensitivity presets: maximum edit distance by word length, and when phonetic matching applies.
+const SENSITIVITY = [
+  { name: "Strict",  maxDistance: (len) => (len >= 6 ? 1 : 0), phonetic: () => false },
+  // Normal: 1 edit for 4–5 letter words, 2 for 6+. Words of 3 letters or fewer must match
+  // exactly or by sound, otherwise "sky"/"say", "the"/"she" or "and"/"end" would all pass.
+  { name: "Normal",  maxDistance: (len) => (len <= 3 ? 0 : len <= 5 ? 1 : 2),
+    // Short words are only fuzzy-matched by sound if they're 3+ letters with a 2+ letter code,
+    // otherwise "so"/"see" or "is"/"as" would all match each other.
+    phonetic: (a, b, codeA) => a.length >= 3 && b.length >= 3 && codeA.length >= 2 },
+  { name: "Lenient", maxDistance: (len) => (len <= 3 ? 1 : len <= 5 ? 2 : 3), phonetic: (a, b, codeA) => codeA.length >= 1 },
+];
+let sensitivity = SENSITIVITY[1];
+
+function wordsMatch(spoken, expected) {
+  if (!spoken || !expected) return false;
+  if (spoken === expected) return true;
+  // Very short words aren't fuzzy-matched on distance in Normal/Strict (see SENSITIVITY):
+  // "a"/"I" or "is"/"it" are one edit apart but are different words.
+  if (levenshtein(spoken, expected) <= sensitivity.maxDistance(expected.length)) return true;
+  const code = metaphone(expected);
+  return sensitivity.phonetic(spoken, expected, code) && code === metaphone(spoken);
+}
+
+/* =========================================================================
+   3. ALIGNMENT AND RESYNC
+   We walk through the spoken words, comparing each one with the script word
+   at the pointer:
+     • match → mark it correct and move on;
+     • filler ("um", "you know"…) → ignore it;
+     • a repeat of the word just read (a stutter) → ignore it;
+     • otherwise LOOK AHEAD up to 8 script words for a match:
+         - found → the script words we jumped over are marked red, then the
+           matched word is green and the pointer jumps forward;
+         - not found → it's an insertion/ad-lib: remember it and don't advance.
+   Remembered insertions explain *substitutions*: "the sky is RED and" →
+   "red" doesn't match "blue" and isn't ahead, so it's remembered; then "and"
+   resyncs one word ahead, and the skipped "blue" is marked wrong with "red"
+   shown above it. Skipped words with nothing remembered are marked "skipped".
+   ========================================================================= */
+
+const LOOKAHEAD = 8;
+const FILLERS = new Set(["um", "umm", "uh", "uhh", "er", "erm", "ah", "like", "so"]);
+
+/**
+ * Applies spoken tokens to an alignment state and returns the new state.
+ * Used for FINAL results (committed) and, on a copy, for INTERIM results
+ * (shown in lighter provisional colours until the recogniser finalises them).
+ */
+function alignTokens(state, tokens) {
+  const s = { status: state.status.slice(), said: state.said.slice(), pointer: state.pointer, pending: state.pending.slice() };
+  const n = script.length;
+
+  for (let t = 0; t < tokens.length && s.pointer < n; t++) {
+    const spoken = tokens[t];
+    const said = normalise(spoken);
+    if (!said) continue;
+    const expected = script[s.pointer].norm;
+    const nextSaid = t + 1 < tokens.length ? normalise(tokens[t + 1]) : null;
+
+    // 1) Expected word.
+    if (wordsMatch(said, expected)) { markCorrect(s, s.pointer); continue; }
+
+    // 2) Two spoken words that form one script word ("well known" ↔ "well-known").
+    if (nextSaid && wordsMatch(said + nextSaid, expected)) { markCorrect(s, s.pointer); t++; continue; }
+
+    // 3) Fillers the speaker added (only when they aren't the expected word, e.g. a real "so").
+    if (FILLERS.has(said)) continue;
+    if (said === "you" && nextSaid === "know") { t++; continue; }
+
+    // 4) Stutter: repeating the word just read.
+    if (s.pointer > 0 && wordsMatch(said, script[s.pointer - 1].norm)) continue;
+
+    // 5) Last word of the script: there's nothing ahead to resync with, so a
+    //    non-matching word here is counted as a wrong last word.
+    if (s.pointer === n - 1) { s.pending.push(spoken); markSkippedUpTo(s, n); continue; }
+
+    // 6) Look ahead for a resync point.
+    let target = -1;
+    for (let j = s.pointer + 1; j < Math.min(n, s.pointer + 1 + LOOKAHEAD); j++) {
+      if (!wordsMatch(said, script[j].norm)) continue;
+      // Short common words ("the", "is", "and") appear everywhere, so for those we
+      // also require the NEXT spoken word to match the script word after j, when we know it.
+      if (said.length <= 3 && nextSaid && j + 1 < n && !wordsMatch(nextSaid, script[j + 1].norm)) continue;
+      target = j;
+      break;
+    }
+
+    if (target === -1) { s.pending.push(spoken); continue; }   // insertion / ad-lib: don't advance
+    markSkippedUpTo(s, target);
+    markCorrect(s, target);
+  }
+  return s;
+}
+
+function markCorrect(s, index) {
+  s.status[index] = "correct";
+  s.said[index] = null;
+  s.pointer = index + 1;
+  s.pending = []; // words said before a correct word were ad-libs
+}
+
+/** Marks script words from the pointer up to (not including) `end` as wrong/skipped. */
+function markSkippedUpTo(s, end) {
+  for (let k = s.pointer; k < end; k++) {
+    if (s.pending.length) {
+      s.status[k] = "wrong";
+      // One remembered word per skipped script word; any extras go on the last one.
+      s.said[k] = k === end - 1 ? s.pending.join(" ") : s.pending.shift();
+      if (k === end - 1) s.pending = [];
+    } else {
+      s.status[k] = "skipped";
+      s.said[k] = null;
+    }
+  }
+  s.pointer = end;
+}
+
+/* =========================================================================
+   4. APP STATE AND RENDERING
+   ========================================================================= */
+
+let script = [];            // [{ text, norm }]
+let parsedFrom = null;      // the textarea text the script was built from
+let committed = null;       // alignment from FINAL recognition results
+let provisional = null;     // alignment including INTERIM results (display only)
+
+const $ = (id) => document.getElementById(id);
+const prompterEl = $("prompter");
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+function emptyState() {
+  return { status: script.map(() => "pending"), said: script.map(() => null), pointer: 0, pending: [] };
+}
+
+function parseScript() {
+  const text = $("script").value;
+  script = text.split(/\s+/).filter((t) => normalise(t)).map((t) => ({ text: t, norm: normalise(t) }));
+  parsedFrom = text;
+  committed = emptyState();
+  provisional = null;
+  buildWords();
+  render();
+}
+
+function buildWords() {
+  prompterEl.innerHTML = "";
+  script.forEach((w, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "word";
+    b.dataset.index = String(i);
+    b.tabIndex = -1;
+    b.innerHTML = '<span class="said"></span><span class="txt"></span>';
+    b.querySelector(".txt").textContent = w.text;
+    prompterEl.appendChild(b);
+  });
+}
+
+function render() {
+  const view = provisional || committed;
+  const buttons = prompterEl.children;
+  for (let i = 0; i < buttons.length; i++) {
+    const b = buttons[i];
+    const finalStatus = committed.status[i];
+    const shownStatus = view.status[i];
+    const isProvisional = finalStatus === "pending" && shownStatus !== "pending";
+    let cls = "word";
+    if (isProvisional) cls += " prov-" + shownStatus;
+    else if (finalStatus !== "pending") cls += " " + finalStatus;
+    if (i === view.pointer) cls += " current";
+    b.className = cls;
+    const said = isProvisional ? view.said[i] : committed.said[i];
+    const status = isProvisional ? shownStatus : finalStatus;
+    b.querySelector(".said").textContent = status === "skipped" ? "skipped" : said || "";
+    b.setAttribute("aria-label", describeWord(i, status, said));
+    b.tabIndex = i === Math.min(view.pointer, script.length - 1) ? 0 : -1;
+  }
+  updateScore();
+  scrollToCurrent(view.pointer);
+}
+
+function describeWord(i, status, said) {
+  const base = `Word ${i + 1}: ${script[i].text}`;
+  if (status === "correct") return base + ", correct";
+  if (status === "wrong") return base + `, wrong, you said ${said}`;
+  if (status === "skipped") return base + ", skipped";
+  return base;
+}
+
+function scrollToCurrent(pointer) {
+  const el = prompterEl.children[Math.min(pointer, script.length - 1)];
+  if (!el) return;
+  const top = el.offsetTop - prompterEl.clientHeight / 2 + el.offsetHeight / 2;
+  prompterEl.scrollTo({ top, behavior: reduceMotion.matches ? "auto" : "smooth" });
+}
+
+function updateScore() {
+  const evaluated = committed.status.filter((s) => s !== "pending").length;
+  const correct = committed.status.filter((s) => s === "correct").length;
+  $("score").textContent = evaluated
+    ? `Accuracy: ${Math.round((correct / evaluated) * 100)}% (${correct}/${evaluated})`
+    : "Accuracy: –";
+}
+
+function showSummary(complete) {
+  const mistakes = committed.status
+    .map((status, i) => ({ status, i }))
+    .filter((m) => m.status === "wrong" || m.status === "skipped");
+  const evaluated = committed.status.filter((s) => s !== "pending").length;
+  if (!evaluated) { $("summary").hidden = true; return; }
+  const correct = evaluated - mistakes.length;
+  $("summaryTitle").textContent = complete ? "Run complete" : "Summary so far";
+  $("summaryStats").textContent =
+    `${correct} of ${evaluated} words correct (${Math.round((correct / evaluated) * 100)}%). ` +
+    (mistakes.length ? `${mistakes.length} mistake${mistakes.length === 1 ? "" : "s"}:` : "No mistakes. Well done!");
+  const body = $("summaryTable").querySelector("tbody");
+  body.innerHTML = "";
+  for (const m of mistakes) {
+    const row = document.createElement("tr");
+    const cells = [String(m.i + 1), script[m.i].text, m.status === "skipped" ? "(skipped)" : committed.said[m.i]];
+    cells.forEach((text, c) => {
+      const td = document.createElement("td");
+      td.textContent = text;
+      if (c === 2) td.className = "said-cell";
+      row.appendChild(td);
+    });
+    body.appendChild(row);
+  }
+  $("summaryTable").hidden = mistakes.length === 0;
+  $("summary").hidden = false;
+  if (complete) $("summaryTitle").focus();
+}
+
+/* =========================================================================
+   5. SPEECH RECOGNITION (continuous, interim results, auto-restart)
+   ========================================================================= */
+
+const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+let active = false;           // the user wants to be listening
+let finalsSeen = new Set();   // result indexes already applied in the current session
+let restartTimes = [];
+
+function setStatus(text, listening) {
+  $("statusText").textContent = text;
+  $("status").classList.toggle("listening", listening);
+}
+
+/** Status text when not listening: Finished, Paused (part-way) or Ready. */
+function idleStatusText() {
+  if (committed.pointer >= script.length && script.length) return "Finished";
+  return committed.pointer > 0 ? "Paused" : "Ready";
+}
+
+function showError(message) {
+  $("error").textContent = message;
+  $("error").hidden = !message;
+}
+
+function setButtons() {
+  const finished = committed && committed.pointer >= script.length;
+  $("startBtn").disabled = !Recognition || active || finished || script.length === 0;
+  $("startBtn").textContent = committed && committed.pointer > 0 && !finished ? "Resume" : "Start";
+  $("pauseBtn").disabled = !active;
+  $("script").disabled = active;
+}
+
+function createRecognition() {
+  const r = new Recognition();
+  r.lang = "en-US";
+  r.continuous = true;
+  r.interimResults = true;
+
+  r.onstart = () => { finalsSeen = new Set(); setStatus("Listening", true); };
+
+  r.onresult = (event) => {
+    let interimText = "";
+    for (let i = 0; i < event.results.length; i++) {
+      const result = event.results[i];
+      const text = result[0].transcript;
+      if (result.isFinal) {
+        if (!finalsSeen.has(i)) {          // apply each final result exactly once
+          finalsSeen.add(i);
+          committed = alignTokens(committed, text.trim().split(/\s+/));
+        }
+      } else {
+        interimText += " " + text;
+      }
+    }
+    // Interim words are applied to a COPY, so they never become permanent by themselves.
+    provisional = interimText.trim() ? alignTokens(committed, interimText.trim().split(/\s+/)) : null;
+    render();
+    if (committed.pointer >= script.length) finishRun();
+  };
+
+  r.onerror = (event) => {
+    if (event.error === "no-speech" || event.error === "aborted") return; // silence / our own stop
+    if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+      showError("Microphone access was blocked. Click the microphone icon in the address bar, choose Allow, then press Start again.");
+    } else if (event.error === "audio-capture") {
+      showError("No microphone was found. Check that one is connected, then press Start again.");
+    } else if (event.error === "network") {
+      showError("Speech recognition needs an internet connection in this browser. Check your connection and press Start again.");
+    } else {
+      showError("Speech recognition stopped unexpectedly (" + event.error + "). Press Start to try again.");
+    }
+    active = false;
+  };
+
+  r.onend = () => {
+    provisional = null;
+    render();
+    if (!active) { setStatus(idleStatusText(), false); setButtons(); return; }
+    // Chrome ends sessions after silence even with continuous = true: restart quietly,
+    // unless it keeps ending immediately (then something is wrong).
+    const now = Date.now();
+    restartTimes = restartTimes.filter((t) => now - t < 10000).concat(now);
+    if (restartTimes.length > 5) {
+      active = false;
+      showError("Speech recognition keeps stopping. Press Start to try again.");
+      setStatus(idleStatusText(), false);
+      setButtons();
+      return;
+    }
+    setTimeout(() => { if (active) safeStart(); }, 250);
+  };
+  return r;
+}
+
+function safeStart() {
+  try { recognition.start(); }
+  catch { /* already starting; the next onend will retry */ }
+}
+
+function start() {
+  if (!Recognition) return;
+  if ($("script").value !== parsedFrom) parseScript();   // script was edited: start fresh
+  if (!script.length) { showError("Please paste a script first."); return; }
+  showError("");
+  $("summary").hidden = true;
+  if (!recognition) recognition = createRecognition();
+  active = true;
+  restartTimes = [];
+  setStatus("Starting… allow the microphone if asked", false);
+  setButtons();
+  safeStart();
+}
+
+function pause() {
+  active = false;
+  setButtons();
+  if (recognition) recognition.stop();     // stop() still delivers the last final result
+  setStatus("Paused", false);
+  setTimeout(() => showSummary(false), 600);
+}
+
+function finishRun() {
+  active = false;
+  if (recognition) recognition.stop();
+  setStatus("Finished", false);
+  setButtons();
+  showSummary(true);
+}
+
+function reset() {
+  active = false;
+  if (recognition) recognition.abort();
+  showError("");
+  $("summary").hidden = true;
+  parseScript();
+  setStatus("Ready", false);
+  setButtons();
+}
+
+/** Jump the pointer to a word: words from there on are cleared so they can be read again. */
+function jumpTo(index) {
+  for (let k = index; k < script.length; k++) { committed.status[k] = "pending"; committed.said[k] = null; }
+  committed.pointer = index;
+  committed.pending = [];
+  provisional = null;
+  render();
+  setButtons();
+  prompterEl.children[index]?.focus();
+}
+
+/* =========================================================================
+   6. EVENTS AND SETTINGS
+   ========================================================================= */
+
+$("startBtn").addEventListener("click", start);
+$("pauseBtn").addEventListener("click", pause);
+$("resetBtn").addEventListener("click", reset);
+
+prompterEl.addEventListener("click", (e) => {
+  const b = e.target.closest(".word");
+  if (b) jumpTo(Number(b.dataset.index));
+});
+
+// Roving focus: one word is tabbable; arrow keys move between words, Enter/Space jumps.
+prompterEl.addEventListener("keydown", (e) => {
+  const b = e.target.closest(".word");
+  if (!b) return;
+  const i = Number(b.dataset.index);
+  let next = null;
+  if (e.key === "ArrowRight" || e.key === "ArrowDown") next = Math.min(i + 1, script.length - 1);
+  if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = Math.max(i - 1, 0);
+  if (e.key === "Home") next = 0;
+  if (e.key === "End") next = script.length - 1;
+  if (next !== null) {
+    e.preventDefault();
+    b.tabIndex = -1;
+    const target = prompterEl.children[next];
+    target.tabIndex = 0;
+    target.focus();
+  }
+});
+
+$("sensitivity").addEventListener("input", (e) => {
+  sensitivity = SENSITIVITY[Number(e.target.value)];
+  $("sensitivityOut").textContent = sensitivity.name;
+  e.target.setAttribute("aria-valuetext", sensitivity.name);
+});
+
+$("fontSize").addEventListener("input", (e) => {
+  document.documentElement.style.setProperty("--prompter-size", e.target.value + "px");
+  $("fontSizeOut").textContent = e.target.value + " px";
+  scrollToCurrent((provisional || committed).pointer);
+});
+
+// Keep the current word centred when the window (or phone orientation) changes size.
+window.addEventListener("resize", () => scrollToCurrent((provisional || committed).pointer));
+
+// Theme: follows the system setting until the user chooses; the choice is remembered.
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  $("themeBtn").textContent = theme === "dark" ? "Light mode" : "Dark mode";
+  $("themeBtn").setAttribute("aria-pressed", String(theme === "dark"));
+}
+let savedTheme = null;
+try { savedTheme = localStorage.getItem("teleprompter-theme"); } catch { /* storage blocked */ }
+applyTheme(savedTheme || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+$("themeBtn").addEventListener("click", () => {
+  const theme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  applyTheme(theme);
+  try { localStorage.setItem("teleprompter-theme", theme); } catch { /* storage blocked */ }
+});
+
+// Start-up
+parseScript();
+if (!Recognition) {
+  $("unsupported").hidden = false;
+  setStatus("Not supported in this browser", false);
+}
+setButtons();
+</script>
+</body>
+</html>

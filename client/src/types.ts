@@ -63,6 +63,18 @@ export interface AnalysisResponse {
 // never sent to the backend as-is.
 // ---------------------------------------------------------------------------
 
+/**
+ * The user's written speech from Step 1. Used only as a reference while
+ * practising; it is NOT sent to the backend or part of `Presentation`.
+ * TODO: the team may add a "script" field to the API contract later.
+ */
+export interface SpeechDraft {
+  title: string;
+  text: string;
+  /** The last uploaded file (for the file card), or null. */
+  file: { name: string; sizeBytes: number } | null;
+}
+
 /** One finished practice attempt from Step 3. */
 export interface PractiseAttempt {
   /** Final transcript (finished speech-recognition results only, or typed text). */

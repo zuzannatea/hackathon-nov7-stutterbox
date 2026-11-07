@@ -1,9 +1,14 @@
-import { ArrowLeft, ArrowRight, Mic, RotateCcw, Square } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { ArrowLeft, ArrowRight, RotateCcw } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useSpeechRecorder } from "../hooks/useSpeechRecorder";
 import type { AnalysisApiErrorInfo } from "../services/analysisApi";
 import type { PractiseAttempt } from "../types";
 import { formatTime } from "../utils/format";
+import { splitSpeechLines } from "../utils/splitSpeechLines";
+import RecordButton from "./RecordButton";
+import Teleprompter from "./Teleprompter";
+
+type PractiseMode = "live" | "practice";
 
 // Team decisions for the demo (PROJECT.md section 12 "Open decisions").
 const MAX_RECORDING_SECONDS = 10 * 60; // 10 minutes
@@ -27,6 +32,8 @@ interface PractiseStepProps {
   onGetFeedback: () => void;
   isSubmitting: boolean;
   analysisError: AnalysisApiErrorInfo | null;
+  /** Go back to Step 1 (from the "Add your speech" hint). */
+  onEditSpeech: () => void;
 }
 
 export default function PractiseStep({
@@ -38,6 +45,7 @@ export default function PractiseStep({
   onGetFeedback,
   isSubmitting,
   analysisError,
+  onEditSpeech,
 }: PractiseStepProps) {
   const recorder = useSpeechRecorder({
     language: RECOGNITION_LANGUAGE,
@@ -53,6 +61,12 @@ export default function PractiseStep({
   });
 
   const [showTypedForm, setShowTypedForm] = useState(false);
+
+  // Practice mode needs a speech from Step 1 to scroll through.
+  const lines = useMemo(() => splitSpeechLines(speechText), [speechText]);
+  const canUsePracticeMode = lines.length > 0;
+  const [mode, setMode] = useState<PractiseMode>(canUsePracticeMode ? "practice" : "live");
+  const activeMode: PractiseMode = canUsePracticeMode ? mode : "live";
   const resultHeadingRef = useRef<HTMLHeadingElement>(null);
 
   // When a finished transcript appears, move keyboard/screen-reader focus to it.
@@ -83,6 +97,42 @@ export default function PractiseStep({
 
   return (
     <>
+      {/* ---------- Mode switch ---------- */}
+      <div className="mode-switch-row">
+        <div className="mode-switch" role="group" aria-label="Practise mode">
+          <button
+            type="button"
+            className="mode-option"
+            aria-pressed={activeMode === "live"}
+            onClick={() => setMode("live")}
+            disabled={recorder.isRecording}
+          >
+            Live transcript
+          </button>
+          <button
+            type="button"
+            className="mode-option"
+            aria-pressed={activeMode === "practice"}
+            onClick={() => setMode("practice")}
+            disabled={recorder.isRecording || !canUsePracticeMode}
+            aria-describedby={canUsePracticeMode ? undefined : "practice-mode-hint"}
+          >
+            Practice mode
+          </button>
+        </div>
+        {!canUsePracticeMode && (
+          <p id="practice-mode-hint" className="hint mode-hint">
+            Add your speech in Step 1 to use Practice mode.{" "}
+            <button type="button" className="link-button inline-link" onClick={onEditSpeech}>
+              Go to Step 1
+            </button>
+          </p>
+        )}
+        {recorder.isRecording && (
+          <p className="hint mode-hint">You can switch modes after you stop recording.</p>
+        )}
+      </div>
+
       {recorder.error && (
         <div className="message message-error" role="alert">
           {recorder.error}
@@ -94,7 +144,7 @@ export default function PractiseStep({
         </div>
       )}
 
-      <div className="practise-layout">
+      <div className={`practise-layout ${activeMode === "practice" ? "practise-layout-full" : ""}`}>
         <div className="practise-main">
           {attempt ? (
             // ---------- Finished: show the complete transcript ----------
@@ -137,8 +187,11 @@ export default function PractiseStep({
                 </button>
               </div>
             </section>
+          ) : activeMode === "practice" ? (
+            // ---------- Practice mode: teleprompter + background recognition ----------
+            <Teleprompter lines={lines} recorder={recorder} />
           ) : (
-            // ---------- Recording ----------
+            // ---------- Live transcript mode (unchanged) ----------
             <section className="card recorder-card" aria-labelledby="recorder-heading">
               <h2 id="recorder-heading" className="visually-hidden">
                 Record your speech
@@ -155,24 +208,12 @@ export default function PractiseStep({
                 </p>
               </div>
 
-              <button
-                type="button"
-                className={`record-button ${recorder.isRecording ? "record-button-stop" : ""}`}
-                onClick={recorder.isRecording ? recorder.stop : recorder.start}
+              <RecordButton
+                isRecording={recorder.isRecording}
                 disabled={recorder.status === "stopping"}
-              >
-                {recorder.isRecording ? (
-                  <>
-                    <Square size={20} fill="currentColor" aria-hidden="true" />
-                    Stop
-                  </>
-                ) : (
-                  <>
-                    <Mic size={22} aria-hidden="true" />
-                    Start
-                  </>
-                )}
-              </button>
+                onStart={recorder.start}
+                onStop={recorder.stop}
+              />
 
               <h3 className="live-heading">Live transcript</h3>
               <div className="transcript-box live-box">
@@ -226,8 +267,8 @@ export default function PractiseStep({
           )}
         </div>
 
-        {/* ---------- Side panel: the Step 1 speech, or tips ---------- */}
-        {speechText.trim() ? (
+        {/* ---------- Side panel (Live mode only): the Step 1 speech, or tips ---------- */}
+        {activeMode === "practice" ? null : speechText.trim() ? (
           <aside className="side-card speech-panel" aria-labelledby="speech-panel-heading">
             <h2 id="speech-panel-heading">Your speech</h2>
             {speechTitle && <p className="speech-panel-title">{speechTitle}</p>}

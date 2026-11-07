@@ -1,6 +1,6 @@
 import { Check } from "lucide-react";
 
-const STEPS = ["Your speech", "Your aims", "Practise", "Feedback"];
+const STEPS = ["Add speech", "Your aims", "Practise", "Feedback"];
 
 interface StepProgressProps {
   /** Which step the user is on: 1–4. */

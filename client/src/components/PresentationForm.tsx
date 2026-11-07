@@ -1,6 +1,7 @@
 import { ArrowRight, Plus } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useState, type Dispatch, type FormEvent, type SetStateAction } from "react";
 import type { Presentation } from "../types";
+import { OTHER_TONE, TONE_OPTIONS, type FormDraft } from "../utils/formDraft";
 
 // Limits that match the backend's validation in server/routes/analyze.ts.
 // If we let something through here, the server would reject it anyway.
@@ -11,57 +12,18 @@ const MAX_KEY_POINTS = 20;
 const MIN_DURATION_MINUTES = 1;
 const MAX_DURATION_MINUTES = 60;
 
-const TONE_OPTIONS = ["Friendly", "Professional", "Persuasive", "Informative", "Inspiring"];
-const OTHER_TONE = "Other";
-
-/**
- * What the user is typing right now. This is kept separate from the final
- * `Presentation` because, while typing, the duration is still text and the
- * tone is split into "dropdown choice" + "custom text".
- */
-interface FormDraft {
-  title: string;
-  audience: string;
-  purpose: string;
-  keyPoints: string[];
-  duration: string;
-  toneChoice: string;
-  customTone: string;
-}
-
 type FieldName = "title" | "audience" | "purpose" | "keyPoints" | "duration" | "tone";
 type FormErrors = Partial<Record<FieldName, string>>;
 
 interface PresentationFormProps {
-  /** Pre-fill the form (used when the user comes back to edit). */
-  initialValue: Presentation | null;
+  /**
+   * What's typed so far. It lives in App.tsx (not in this form) so that
+   * unsaved typing survives going Back to Step 1 and returning.
+   */
+  draft: FormDraft;
+  onDraftChange: Dispatch<SetStateAction<FormDraft>>;
   /** Called with clean, validated data when the user submits. */
   onSubmit: (presentation: Presentation) => void;
-}
-
-/** Turn a saved Presentation back into form draft values. */
-function toDraft(presentation: Presentation | null): FormDraft {
-  if (!presentation) {
-    return {
-      title: "",
-      audience: "",
-      purpose: "",
-      keyPoints: [""],
-      duration: "5",
-      toneChoice: TONE_OPTIONS[0],
-      customTone: "",
-    };
-  }
-  const isPresetTone = TONE_OPTIONS.includes(presentation.tone);
-  return {
-    title: presentation.title,
-    audience: presentation.audience,
-    purpose: presentation.purpose,
-    keyPoints: presentation.keyPoints.length > 0 ? [...presentation.keyPoints] : [""],
-    duration: String(presentation.desiredDurationMinutes),
-    toneChoice: isPresetTone ? presentation.tone : OTHER_TONE,
-    customTone: isPresetTone ? "" : presentation.tone,
-  };
 }
 
 /** Returns an error message for a required text field, or undefined if it's fine. */
@@ -136,8 +98,7 @@ function inputIdFor(field: FieldName, draft: FormDraft): string {
 
 const FIELD_ORDER: FieldName[] = ["title", "audience", "purpose", "keyPoints", "duration", "tone"];
 
-export default function PresentationForm({ initialValue, onSubmit }: PresentationFormProps) {
-  const [draft, setDraft] = useState<FormDraft>(() => toDraft(initialValue));
+export default function PresentationForm({ draft, onDraftChange: setDraft, onSubmit }: PresentationFormProps) {
   // Only show errors after the user has tried to submit once, so the form
   // doesn't shout at them before they've started typing.
   const [hasTriedSubmit, setHasTriedSubmit] = useState(false);
@@ -362,7 +323,7 @@ export default function PresentationForm({ initialValue, onSubmit }: Presentatio
 
       <div className="form-actions">
         <button type="submit" className="button-primary">
-          Save and continue
+          Continue to practise
           <ArrowRight size={18} aria-hidden="true" />
         </button>
       </div>

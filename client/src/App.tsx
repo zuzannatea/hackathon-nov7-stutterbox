@@ -1,3 +1,4 @@
+import { ArrowLeft } from "lucide-react";
 import { useEffect, useState } from "react";
 import "./App.css";
 import {
@@ -10,22 +11,33 @@ import FeedbackStep from "./components/FeedbackStep";
 import Home from "./components/Home";
 import PractiseStep from "./components/PractiseStep";
 import PresentationForm from "./components/PresentationForm";
+import SpeechStep from "./components/SpeechStep";
 import StepProgress from "./components/StepProgress";
-import type { AnalysisResponse, AnalyzeRequestBody, PractiseAttempt, Presentation } from "./types";
+import type {
+  AnalysisResponse,
+  AnalyzeRequestBody,
+  PractiseAttempt,
+  Presentation,
+  SpeechDraft,
+} from "./types";
+import { createFormDraft, type FormDraft } from "./utils/formDraft";
 
-// Which screen is showing. Flow: Home → 1 Your speech → 2 Your aims → 3 Practise → 4 Feedback.
-// TODO (part a): add the "speech" screen (Step 1) and point Input Speech at it.
+// Which screen is showing.
+// Flow: Home → 1 Add speech → 2 Your aims → 3 Practise → 4 Feedback.
 type Screen =
   | "home" // landing page
+  | "speech" // Step 1: type, paste or upload the speech
   | "aims" // Step 2: presentation details form
   | "practise" // Step 3: record the speech
   | "feedback"; // Step 4: analysis results
 
-const QUICK_TIPS = [
+const AIMS_TIPS = [
   "Write 3–5 key points. These are what your feedback checks for.",
   "Be specific about your audience, e.g. 'first-year students'.",
   "Most speeches land well at 130–160 words per minute.",
 ];
+
+const EMPTY_SPEECH: SpeechDraft = { title: "", text: "", file: null };
 
 function App() {
   const [screen, setScreen] = useState<Screen>("home");
@@ -33,10 +45,10 @@ function App() {
   // ---- Everything the user has entered, kept here so nothing is lost between steps ----
   // Step 1 speech: frontend-only reference text. It is NOT sent to the backend.
   // TODO: the team may add a "script" field to the API contract later.
-  // Empty until Step 1 is built (part a).
-  const [speechTitle] = useState("");
-  const [speechText] = useState("");
-  // Step 2 aims (saved, validated form data).
+  const [speech, setSpeech] = useState<SpeechDraft>(EMPTY_SPEECH);
+  // Step 2: what's typed in the form (even if not saved yet)...
+  const [aimsDraft, setAimsDraft] = useState<FormDraft>(() => createFormDraft(null));
+  // ...and the saved, validated aims.
   const [presentation, setPresentation] = useState<Presentation | null>(null);
   // Step 3 finished attempt (transcript + duration).
   const [attempt, setAttempt] = useState<PractiseAttempt | null>(null);
@@ -72,7 +84,16 @@ function App() {
     setAnalysis(null);
     setAnalysisError(null);
     setAttempt(null);
-    setScreen("aims"); // TODO (part a): go to Step 1 "speech" instead
+    setScreen("speech");
+  }
+
+  /** Go to Step 2, filling its Title from the Step 1 title if Title is empty. */
+  function goToAims() {
+    const speechTitle = speech.title.trim();
+    if (speechTitle) {
+      setAimsDraft((draft) => (draft.title.trim() === "" ? { ...draft, title: speechTitle } : draft));
+    }
+    setScreen("aims");
   }
 
   function handleAimsSubmit(newPresentation: Presentation) {
@@ -128,14 +149,14 @@ function App() {
     }
   }
 
-  // Step 1 is skipped until it exists (or when the user skips it).
-  const skippedSteps = speechText.trim() ? [] : [1];
+  // Step 1 counts as skipped if there's no speech text.
+  const skippedSteps = speech.text.trim() ? [] : [1];
 
   return (
     <>
       <Header
         isHome={screen === "home"}
-        showStartButton={screen !== "aims"} /* TODO (part a): hide on "speech" instead */
+        showStartButton={screen !== "speech"}
         onGoHome={goHome}
         onStart={startFlow}
       />
@@ -145,28 +166,60 @@ function App() {
       {screen !== "home" && (
         <div className="app">
           <main>
+            {screen === "speech" && (
+              <>
+                <StepProgress currentStep={1} />
+                <div className="page-heading">
+                  <h1>Add your speech</h1>
+                  <p>Type or paste it below, or upload a document. You can edit it here at any time.</p>
+                </div>
+                <SpeechStep
+                  speech={speech}
+                  onSpeechChange={setSpeech}
+                  onContinue={goToAims}
+                  onSkip={goToAims}
+                />
+                <div className="step-nav">
+                  <button type="button" className="button-back" onClick={goHome}>
+                    <ArrowLeft size={16} aria-hidden="true" />
+                    Back
+                  </button>
+                </div>
+              </>
+            )}
+
             {screen === "aims" && (
               <>
                 <StepProgress currentStep={2} skippedSteps={skippedSteps} />
                 <div className="page-heading">
-                  <h1>Tell us about your presentation</h1>
+                  <h1>What are your aims?</h1>
                   <p>
-                    Stutterbox uses these details to compare what you planned to say with what you
-                    actually say. All fields are required.
+                    Tell us who you're speaking to and what you want them to think, feel or do
+                    afterwards.
                   </p>
                 </div>
 
                 <div className="form-layout">
-                  <PresentationForm initialValue={presentation} onSubmit={handleAimsSubmit} />
+                  <PresentationForm
+                    draft={aimsDraft}
+                    onDraftChange={setAimsDraft}
+                    onSubmit={handleAimsSubmit}
+                  />
 
                   <aside className="tips-card" aria-labelledby="tips-heading">
                     <h2 id="tips-heading">Quick tips</h2>
                     <ul className="tips-list">
-                      {QUICK_TIPS.map((tip) => (
+                      {AIMS_TIPS.map((tip) => (
                         <li key={tip}>{tip}</li>
                       ))}
                     </ul>
                   </aside>
+                </div>
+                <div className="step-nav">
+                  <button type="button" className="button-back" onClick={() => setScreen("speech")}>
+                    <ArrowLeft size={16} aria-hidden="true" />
+                    Back
+                  </button>
                 </div>
               </>
             )}
@@ -176,17 +229,21 @@ function App() {
                 <StepProgress currentStep={3} skippedSteps={skippedSteps} />
                 <div className="page-heading">
                   <h1>Practise your speech</h1>
-                  <p>Press Start and give your speech out loud. Your words appear as you speak.</p>
+                  <p>
+                    {presentation ? <>Practising “{presentation.title}”. </> : null}
+                    Press Start and give your speech out loud. Choose Live transcript to see your words as you speak, or Practice mode to follow your speech line by line.
+                  </p>
                 </div>
                 <PractiseStep
-                  speechTitle={speechTitle}
-                  speechText={speechText}
+                  speechTitle={speech.title}
+                  speechText={speech.text}
                   attempt={attempt}
                   onAttemptChange={handleAttemptChange}
                   onBack={() => setScreen("aims")}
                   onGetFeedback={handleGetFeedback}
                   isSubmitting={isSubmitting}
                   analysisError={analysisError}
+                  onEditSpeech={() => setScreen("speech")}
                 />
               </>
             )}
