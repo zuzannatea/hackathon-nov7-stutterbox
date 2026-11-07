@@ -190,6 +190,8 @@ export function createAnalyzeRouter(
         sendError(res, 502, "Speech analysis failed. Please try again.");
         return;
       }
+      // Any other error was not logged by the AI service, so log its type (never the transcript or key).
+      console.warn(`[analyze] unexpected error (${error instanceof Error ? error.name : typeof error}).`);
       sendError(res, 502, "Speech analysis failed. Please try again.");
     }
   });
