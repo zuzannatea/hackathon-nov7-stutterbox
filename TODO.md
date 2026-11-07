@@ -290,7 +290,9 @@ critical integration blockers.
 - \[x\] Implement `POST /api/analyze` with malformed-JSON handling and validation for transcript, presentation data, duration, and optional inspiration.
 - \[x\] Calculate statistics from submitted transcript/duration; never trust client-supplied statistics.
 - \[x\] Return useful status codes and safe error messages, including a clear unavailable response while Member 3's AI service is missing.
-- \[ \] Add sensible request timeout/error handling where practical.
+- \[x\] Add a 30-second AI-service timeout with safe `504` handling and retain safe `502` handling for ordinary failures.
+- \[x\] Test service success, timeout, provider failure, validation/statistics preservation, and server responsiveness after timeout.
+- \[ \] Coordinate possible `AbortSignal` support with Member 3; the current timeout does not cancel an in-flight provider request.
 - \[ \] Read Member 3's AI service through the agreed interface and
   handle its returned result/errors; do not implement Claude calls here.
 - \[ \] Help integrate and debug the complete flow.

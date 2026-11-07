@@ -40,6 +40,8 @@ export interface Feedback {
 
 export type AnalyseSpeech = (input: AnalysisRequest) => Promise<Feedback>;
 
+export const ANALYSIS_TIMEOUT_MS = 30_000;
+
 const MAX_TRANSCRIPT_LENGTH = 20_000;
 const MAX_INSPIRATION_LENGTH = 5_000;
 const MAX_KEY_POINTS = 20;
@@ -75,7 +77,26 @@ function sendError(res: Response, status: number, message: string): void {
   res.status(status).json({ error: message });
 }
 
-export function createAnalyzeRouter(analyseSpeech?: AnalyseSpeech): Router {
+class AnalysisTimeoutError extends Error {}
+
+function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout>;
+
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => reject(new AnalysisTimeoutError()), timeoutMs);
+  });
+
+  return Promise.race([operation, timeoutPromise]).finally(() => clearTimeout(timeout));
+}
+
+export function createAnalyzeRouter(
+  analyseSpeech?: AnalyseSpeech,
+  analysisTimeoutMs = ANALYSIS_TIMEOUT_MS,
+): Router {
+  if (!Number.isFinite(analysisTimeoutMs) || analysisTimeoutMs <= 0) {
+    throw new RangeError("analysisTimeoutMs must be a positive finite number.");
+  }
+
   const router = Router();
 
   router.post("/", async (req: Request, res: Response) => {
@@ -117,14 +138,21 @@ export function createAnalyzeRouter(analyseSpeech?: AnalyseSpeech): Router {
     }
 
     try {
-      const feedback = await analyseSpeech({
-        presentation: body.presentation,
-        transcript: body.transcript,
-        statistics,
-        ...(typeof body.inspiration === "string" ? { inspiration: body.inspiration } : {}),
-      });
+      const feedback = await withTimeout(
+        analyseSpeech({
+          presentation: body.presentation,
+          transcript: body.transcript,
+          statistics,
+          ...(typeof body.inspiration === "string" ? { inspiration: body.inspiration } : {}),
+        }),
+        analysisTimeoutMs,
+      );
       res.json({ transcript: body.transcript, statistics, feedback });
-    } catch {
+    } catch (error) {
+      if (error instanceof AnalysisTimeoutError) {
+        sendError(res, 504, "Speech analysis timed out. Please try again.");
+        return;
+      }
       sendError(res, 502, "Speech analysis failed. Please try again.");
     }
   });

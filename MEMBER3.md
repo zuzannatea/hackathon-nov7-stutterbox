@@ -280,6 +280,13 @@ Member 2 has already implemented:
 
 At present, valid requests return `503 Service Unavailable` because the AI service has not yet been supplied.
 
+The route uses a 30-second timeout by default and returns `504 Gateway
+Timeout` if the service does not settle in time. The current integration
+interface does not pass an `AbortSignal`, so this timeout stops the route
+from waiting but does not cancel an in-flight Claude/provider request.
+The provider operation may continue after the frontend receives the
+timeout response.
+
 Your deliverable is the analysis function that Member 2 can connect to the route.
 
 Please communicate:

@@ -173,6 +173,7 @@ Errors are JSON objects with an `error` string.
 | `400 Bad Request` | Non-object body, missing/empty transcript, invalid presentation, invalid duration/inspiration, or malformed JSON | `{"error":"Transcript cannot be empty."}` |
 | `413 Payload Too Large` | Request exceeds 1 MB, or transcript exceeds 20,000 characters | `{"error":"Request body is too large."}` |
 | `502 Bad Gateway` | Connected `AnalyseSpeech` function throws or rejects | `{"error":"Speech analysis failed. Please try again."}` |
+| `504 Gateway Timeout` | AI analysis does not settle within the route timeout (30 seconds by default) | `{"error":"Speech analysis timed out. Please try again."}` |
 | `503 Service Unavailable` | Current state: no AI service passed to the route | `{"error":"AI analysis is not available yet. Please try again later."}` |
 | `500 Internal Server Error` | Unexpected backend error | `{"error":"An unexpected server error occurred."}` |
 
@@ -180,7 +181,49 @@ The current `503` is expected while Member 3's service is not connected;
 it does not mean the request was invalid. The frontend should explain that
 analysis is temporarily unavailable and allow a retry.
 
-## 5. Integration checklist
+The `504` timeout stops the route from waiting, but does **not** cancel the
+underlying AI/provider request. The current `AnalyseSpeech` interface does
+not pass an `AbortSignal`; a timed-out provider operation may continue in
+the background. Keep this limitation in mind when retrying a timed-out
+request.
+
+## 5. Backend verification commands
+
+Start the backend in one terminal:
+
+```sh
+cd server
+npm run dev
+```
+
+In another terminal, run the route-level tests and the HTTP integration
+script from `server/`:
+
+```sh
+cd server
+npm run build
+npm test
+npm run test:integration
+```
+
+`npm test` runs `tsx --test routes/analyze.test.ts`. The timeout test
+injects a short timeout so it does not wait for the 30-second production
+default.
+
+`npm run test:integration` sends HTTP requests to the running Express
+server. It covers health, request validation, malformed and oversized
+JSON, the expected `503` while the AI service is missing, and health
+checks after rejected payloads. Set `BASE_URL` to target another server,
+for example `BASE_URL=http://localhost:3000 npm run test:integration`.
+This script does not start or stop the server. It reports an actionable
+message and exits if the server cannot be reached.
+
+HTTP integration tests do not inject an AI service. Successful AI
+responses, timeouts, and AI-service errors remain covered by the
+route-level tests; the timeout still does not cancel its underlying
+provider request.
+
+## 6. Integration checklist
 
 ### Member 1 + Member 2
 
@@ -190,7 +233,7 @@ analysis is temporarily unavailable and allow a retry.
   and returns its own calculated statistics.
 - [ ] Verify success rendering for transcript, statistics, all feedback
   collections, every coverage status, and optional rewrite.
-- [ ] Verify loading, empty-input, `400`, `413`, `502`, `503`, and network
+- [ ] Verify loading, empty-input, `400`, `413`, `502`, `503`, `504`, and network
   failure states.
 - [ ] Check transcript and presentation field limits and ensure elapsed
   duration is greater than zero.
