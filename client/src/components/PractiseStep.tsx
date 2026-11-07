@@ -95,6 +95,19 @@ export default function PractiseStep({
 
   const hasLiveText = recorder.finalTranscript !== "" || recorder.interimTranscript !== "";
 
+  // "Get feedback" is only available once recording has stopped and there's a final transcript.
+  const hasTranscript = attempt !== null && attempt.transcript.trim() !== "";
+  const feedbackBlockedReason = recorder.isRecording
+    ? "Stop recording first"
+    : !hasTranscript
+      ? "Record your speech first"
+      : null;
+  const canGetFeedback = feedbackBlockedReason === null && !isSubmitting;
+
+  function handleGetFeedbackClick() {
+    if (canGetFeedback) onGetFeedback(); // aria-disabled buttons can still be clicked, so check here
+  }
+
   return (
     <>
       {/* ---------- Mode switch ---------- */}
@@ -159,14 +172,8 @@ export default function PractiseStep({
                 <li className="chip">Duration {formatTime(attempt.durationSeconds)}</li>
               </ul>
               <div className="transcript-box">{attempt.transcript}</div>
-              {analysisError && (
-                <div className="message message-error" role="alert">
-                  {analysisError.kind === "network"
-                    ? analysisError.message
-                    : `Analysis request${analysisError.status ? ` (HTTP ${analysisError.status})` : ""} failed: ${analysisError.message}`}
-                </div>
-              )}
-              <div className="form-actions">
+              {/* "Get feedback" lives at the bottom of the screen (one button for both modes). */}
+              <div className="form-actions form-actions-start">
                 <button
                   type="button"
                   className="button-secondary"
@@ -175,15 +182,6 @@ export default function PractiseStep({
                 >
                   <RotateCcw size={16} aria-hidden="true" />
                   Record again
-                </button>
-                <button
-                  type="button"
-                  className="button-primary"
-                  onClick={onGetFeedback}
-                  disabled={isSubmitting || attempt.transcript.trim() === ""}
-                >
-                  {isSubmitting ? "Analyzing…" : "Get feedback"}
-                  {!isSubmitting && <ArrowRight size={18} aria-hidden="true" />}
                 </button>
               </div>
             </section>
@@ -286,11 +284,37 @@ export default function PractiseStep({
         )}
       </div>
 
-      <div className="step-nav">
+      {analysisError && (
+        <div className="message message-error feedback-error" role="alert">
+          {analysisError.kind === "network"
+            ? analysisError.message
+            : `Analysis request${analysisError.status ? ` (HTTP ${analysisError.status})` : ""} failed: ${analysisError.message}`}
+        </div>
+      )}
+
+      {/* ---------- Bottom row: Back (left) and Get feedback (right) ---------- */}
+      <div className="step-nav step-nav-split">
         <button type="button" className="button-back" onClick={onBack} disabled={isSubmitting}>
           <ArrowLeft size={16} aria-hidden="true" />
           Back
         </button>
+        <div className="feedback-action">
+          <button
+            type="button"
+            className="button-primary"
+            onClick={handleGetFeedbackClick}
+            aria-disabled={!canGetFeedback}
+            aria-describedby={feedbackBlockedReason ? "feedback-hint" : undefined}
+          >
+            {isSubmitting ? "Analyzing…" : "Get feedback"}
+            {!isSubmitting && <ArrowRight size={18} aria-hidden="true" />}
+          </button>
+          {feedbackBlockedReason && (
+            <p id="feedback-hint" className="hint feedback-hint">
+              {feedbackBlockedReason}
+            </p>
+          )}
+        </div>
       </div>
     </>
   );
