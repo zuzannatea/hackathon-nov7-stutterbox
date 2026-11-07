@@ -1,0 +1,175 @@
+import assert from "node:assert/strict";
+import { once } from "node:events";
+import { type AddressInfo } from "node:net";
+import { createServer, type Server } from "node:http";
+import test from "node:test";
+import express from "express";
+import {
+  createAnalyzeRouter,
+  type AnalyseSpeech,
+  type Feedback,
+} from "./analyze.js";
+
+const presentation = {
+  title: "A short talk",
+  audience: "The team",
+  purpose: "Share an update",
+  keyPoints: ["Progress"],
+  desiredDurationMinutes: 2,
+  tone: "Clear",
+};
+
+const requestBody = {
+  presentation,
+  transcript: "Um, hello. Let's start!",
+  durationSeconds: 30,
+};
+
+const feedback: Feedback = {
+  overallAssessment: "A clear update.",
+  strengths: [],
+  improvements: [],
+  keyPointCoverage: [],
+  nextSteps: [],
+};
+
+interface RunningServer {
+  server: Server;
+  baseUrl: string;
+}
+
+async function startTestServer(
+  analyseSpeech?: AnalyseSpeech,
+  timeoutMs?: number,
+): Promise<RunningServer> {
+  const app = express();
+  app.use(express.json());
+  app.use("/api/analyze", createAnalyzeRouter(analyseSpeech, timeoutMs));
+  app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
+
+  const server = createServer(app);
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+
+  const address = server.address() as AddressInfo;
+  return { server, baseUrl: `http://127.0.0.1:${address.port}` };
+}
+
+async function stopTestServer(server: Server): Promise<void> {
+  const closed = new Promise<void>((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
+  server.closeAllConnections();
+  await closed;
+}
+
+test("returns feedback and unchanged server-calculated statistics before timeout", async () => {
+  const { server, baseUrl } = await startTestServer(async () => feedback, 1_000);
+  try {
+    const response = await fetch(`${baseUrl}/api/analyze`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(requestBody),
+    });
+    const result = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(result.transcript, requestBody.transcript);
+    assert.deepEqual(result.feedback, feedback);
+    assert.deepEqual(result.statistics, {
+      durationSeconds: 30,
+      wordCount: 4,
+      wordsPerMinute: 8,
+      fillerWords: { um: 1 },
+      sentenceCount: 2,
+    });
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("returns 504 at timeout while server stays responsive and work continues", async () => {
+  let completedAfterTimeout = false;
+  const slowService: AnalyseSpeech = async () => {
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    completedAfterTimeout = true;
+    return feedback;
+  };
+  const { server, baseUrl } = await startTestServer(slowService, 10);
+
+  try {
+    const response = await fetch(`${baseUrl}/api/analyze`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(requestBody),
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 504);
+    assert.deepEqual(body, { error: "Speech analysis timed out. Please try again." });
+    assert.equal(completedAfterTimeout, false);
+
+    const healthResponse = await fetch(`${baseUrl}/api/health`);
+    assert.equal(healthResponse.status, 200);
+    assert.deepEqual(await healthResponse.json(), { status: "ok" });
+
+    await new Promise((resolve) => setTimeout(resolve, 90));
+    assert.equal(completedAfterTimeout, true);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("returns a safe 502 for an unexpected AI service failure", async () => {
+  const failingService: AnalyseSpeech = async () => {
+    throw new Error("provider secret detail");
+  };
+  const { server, baseUrl } = await startTestServer(failingService, 1_000);
+
+  try {
+    const response = await fetch(`${baseUrl}/api/analyze`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(requestBody),
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 502);
+    assert.deepEqual(body, { error: "Speech analysis failed. Please try again." });
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("keeps validation errors and missing-service 503 behavior", async () => {
+  let callCount = 0;
+  const service: AnalyseSpeech = async () => {
+    callCount += 1;
+    return feedback;
+  };
+  const { server, baseUrl } = await startTestServer(service, 1_000);
+
+  try {
+    const invalidResponse = await fetch(`${baseUrl}/api/analyze`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...requestBody, transcript: "  " }),
+    });
+    assert.equal(invalidResponse.status, 400);
+    assert.equal(callCount, 0);
+  } finally {
+    await stopTestServer(server);
+  }
+
+  const { server: missingServer, baseUrl: missingBaseUrl } = await startTestServer();
+  try {
+    const response = await fetch(`${missingBaseUrl}/api/analyze`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(requestBody),
+    });
+    assert.equal(response.status, 503);
+  } finally {
+    await stopTestServer(missingServer);
+  }
+});

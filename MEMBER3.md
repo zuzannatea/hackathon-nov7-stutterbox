@@ -100,20 +100,19 @@ interface Presentation {
 }
 ```
 
-The statistics are calculated by Member 2's backend service:
+The statistics are calculated by Member 2's backend service. The exported
+`SpeechStatistics` type in `server/services/statistics.ts` is the source of
+truth; use it directly rather than redefining or adding fields to it:
 
 ```ts
 interface SpeechStatistics {
   durationSeconds: number;
   wordCount: number;
   wordsPerMinute: number;
-  fillerWordCount: number;
   fillerWords: Record<string, number>;
   sentenceCount: number;
 }
 ```
-
-Check the actual exported type in the repository before copying or redefining it.
 
 ### What the input means
 
@@ -280,6 +279,13 @@ Member 2 has already implemented:
 - The response structure.
 
 At present, valid requests return `503 Service Unavailable` because the AI service has not yet been supplied.
+
+The route uses a 30-second timeout by default and returns `504 Gateway
+Timeout` if the service does not settle in time. The current integration
+interface does not pass an `AbortSignal`, so this timeout stops the route
+from waiting but does not cancel an in-flight Claude/provider request.
+The provider operation may continue after the frontend receives the
+timeout response.
 
 Your deliverable is the analysis function that Member 2 can connect to the route.
 
