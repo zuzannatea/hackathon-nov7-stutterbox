@@ -225,17 +225,22 @@ analyse sample text independently.
     data.
 -   [ ] Member 1: implement the API client function for
     `POST /api/analyze` (integration can wait).
--   [ ] Member 2: create `POST /api/analyze` route using JSON request
-    parsing (no Multer/audio upload needed for this MVP).
--   [ ] Member 2: validate presentation, transcript, and duration.
+-   [x] Member 2: create `POST /api/analyze` using JSON request parsing
+    (no audio upload or server-side transcription).
+-   [x] Member 2: validate presentation, transcript, duration, optional
+    inspiration, malformed JSON, and request size.
 -   [x] Member 2: implement `calculateSpeechStatistics` in
     `server/services/statistics.ts` and confirm the server TypeScript
     build succeeds.
--   [ ] Member 2: create the route with a temporary/mock feedback
-    response until Member 3's AI service is ready.
+-   [x] Member 2: review the statistics edge cases and accept the MVP
+    limitations recorded in `PROJECT.md` and `AGENTS.md`.
+-   [x] Member 2: calculate statistics on the server and return a safe
+    unavailable response while Member 3's analysis service is missing.
+    Do not return mock feedback.
 -   [ ] Member 3: define the AI feedback schema and prompt.
 -   [ ] Member 3: implement the agreed AI service function (for example,
-    `analyseSpeech({ presentation, transcript, statistics, inspiration })`)
+    `analyseSpeech({ presentation, transcript, statistics, inspiration })`
+    matching the backend `AnalyseSpeech` type and returning `Feedback`,
     using the Anthropic Claude SDK and a backend-only
     `ANTHROPIC_API_KEY`. Agree the exact export and file location with
     Member 2 before implementation.
@@ -281,9 +286,10 @@ critical integration blockers.
 
 **Member 2 --- Backend**
 
-- \[ \] Handle empty transcript and zero-duration edge cases.
-- \[ \] Validate transcript, presentation data, and duration.
-- \[ \] Return useful status codes and safe error messages.
+- \[x\] Implement deterministic statistics and review edge cases; accepted limitations are recorded in the project docs.
+- \[x\] Implement `POST /api/analyze` with malformed-JSON handling and validation for transcript, presentation data, duration, and optional inspiration.
+- \[x\] Calculate statistics from submitted transcript/duration; never trust client-supplied statistics.
+- \[x\] Return useful status codes and safe error messages, including a clear unavailable response while Member 3's AI service is missing.
 - \[ \] Add sensible request timeout/error handling where practical.
 - \[ \] Read Member 3's AI service through the agreed interface and
   handle its returned result/errors; do not implement Claude calls here.
@@ -372,8 +378,9 @@ stability or the deadline.
 -   **Microphone/speech recognition unreliable:** use a clearly labelled
     pasted transcript for the demo. Do not imply that it was transcribed
     live.
--   **Integration blocked:** use the agreed mock `AnalysisResponse` so
-    the frontend demo remains presentable.
+-   **AI integration blocked:** use a clearly labelled frontend-only
+    fixture for UI development if needed. The backend must not return
+    fabricated feedback as an analysis result.
 -   **A task is blocked for more than 20--30 minutes:** tell the team,
     reduce scope, and agree on a fallback instead of silently losing
     time.

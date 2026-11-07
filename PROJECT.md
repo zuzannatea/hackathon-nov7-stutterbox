@@ -221,6 +221,12 @@ Request: `application/json`
 -   `durationSeconds`: elapsed presentation duration measured by the frontend
 -   `inspiration`: optional text
 
+The backend validates this payload, caps the JSON body at 1 MB and the
+transcript at 20,000 characters, and calculates statistics itself. The
+route is implemented, but Member 3's callable Claude analysis service is
+not yet available in the repository; valid requests currently receive a
+safe `503 Service Unavailable` response until that integration is added.
+
 Example presentation object:
 
 ``` ts
@@ -246,6 +252,17 @@ interface SpeechStatistics {
 }
 ```
 
+The statistics service is implemented in `server/services/statistics.ts`
+and has passed the backend TypeScript build. Its MVP rules count
+whitespace-separated words, punctuation-based sentences, and the
+case-insensitive fillers `um`, `uh`, `erm`, and `er`. Invalid or
+non-positive durations normalize to zero. The team reviewed and accepted
+these limitations: abbreviations, decimals, and punctuation patterns can
+affect sentence counts; literal uses of filler terms may be counted;
+very short durations can produce unusually high WPM; and WPM is not
+rounded. Do not expand sentence segmentation without a demonstrated MVP
+need.
+
 Suggested internal analysis input:
 
 ``` ts
@@ -256,6 +273,12 @@ interface AnalysisRequest {
   inspiration?: string;
 }
 ```
+
+The backend route exports the integration boundary
+`AnalyseSpeech = (input: AnalysisRequest) => Promise<Feedback>`, where
+`Feedback` is the response's `feedback` object below. Member 3 should
+provide a function matching this contract; the route does not implement
+Claude calls or substitute placeholder feedback.
 
 Successful response shape:
 
