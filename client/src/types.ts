@@ -73,6 +73,11 @@ export interface SpeechDraft {
   text: string;
   /** The last uploaded file (for the file card), or null. */
   file: { name: string; sizeBytes: number } | null;
+  /**
+   * Where the speech came from: an uploaded document, a generated speech, or
+   * null (typed/pasted, or nothing yet). Upload and Generate can't both be active.
+   */
+  source: "upload" | "generated" | null;
 }
 
 /** One finished practice attempt from Step 3. */
