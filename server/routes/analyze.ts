@@ -3,6 +3,10 @@ import {
   calculateSpeechStatistics,
   type SpeechStatistics,
 } from "../services/statistics.js";
+import {
+  AnalysisProviderError,
+  AnalysisUnavailableError,
+} from "../services/analysisErrors.js";
 
 export interface Presentation {
   title: string;
@@ -151,6 +155,14 @@ export function createAnalyzeRouter(
     } catch (error) {
       if (error instanceof AnalysisTimeoutError) {
         sendError(res, 504, "Speech analysis timed out. Please try again.");
+        return;
+      }
+      if (error instanceof AnalysisUnavailableError) {
+        sendError(res, 503, "AI analysis is not available yet. Please try again later.");
+        return;
+      }
+      if (error instanceof AnalysisProviderError) {
+        sendError(res, 502, "Speech analysis failed. Please try again.");
         return;
       }
       sendError(res, 502, "Speech analysis failed. Please try again.");

@@ -19,10 +19,16 @@ const presentation = {
 
 const validRequest = {
   presentation,
-  transcript: "Um, hello council members. We can improve access for wheelchair users.",
+  // Short transcripts use the service's deterministic feedback path and do
+  // not call Claude, keeping this HTTP integration test safe with or without a key.
+  transcript: "Hello there.",
   durationSeconds: 35,
   inspiration: "Optional reference text",
 };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 function report(name: string, passed: boolean, detail?: string): void {
   results.push({ name, passed });
@@ -185,12 +191,29 @@ async function main(): Promise<void> {
   await checkHealth("Health endpoint responds after oversized JSON");
 
   await checkResponse(
-    "Valid request receives expected 503 while AI service is missing",
-    503,
+    "Short valid request reaches the AI service and returns deterministic feedback",
+    200,
     () => sendJson(validRequest),
-    (body) =>
-      typeof body === "object" && body !== null && "error" in body &&
-      body.error === "AI analysis is not available yet. Please try again later.",
+    (body) => {
+      if (!isRecord(body) || !isRecord(body.statistics) || !isRecord(body.feedback)) {
+        return false;
+      }
+
+      return (
+        body.transcript === validRequest.transcript &&
+        body.statistics.durationSeconds === 35 &&
+        body.statistics.wordCount === 2 &&
+        body.statistics.wordsPerMinute === 2 / (35 / 60) &&
+        body.statistics.sentenceCount === 1 &&
+        isRecord(body.statistics.fillerWords) &&
+        body.feedback.overallAssessment ===
+          "We couldn't hear enough speech to give you feedback on this attempt. Only a few words were picked up, so there is nothing meaningful to review yet." &&
+        Array.isArray(body.feedback.strengths) &&
+        Array.isArray(body.feedback.improvements) &&
+        Array.isArray(body.feedback.keyPointCoverage) &&
+        Array.isArray(body.feedback.nextSteps)
+      );
+    },
   );
 
   await checkHealth("Health endpoint responds after all integration requests");

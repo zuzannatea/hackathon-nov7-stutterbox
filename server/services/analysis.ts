@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { AnalysisRequest, Feedback } from "../routes/analyze.js";
+import { AnalysisProviderError, AnalysisUnavailableError } from "./analysisErrors.js";
 
 /**
  * The model is configured in this one place. Override it with ANTHROPIC_MODEL
@@ -7,8 +8,11 @@ import type { AnalysisRequest, Feedback } from "../routes/analyze.js";
  * during a live demo; set ANTHROPIC_MODEL=claude-opus-5-5 for deeper feedback.
  */
 const DEFAULT_MODEL = "claude-haiku-5-5";
-const REQUEST_TIMEOUT_MS = 30_000;
-const MAX_RETRIES = 1;
+// Leave the route's 30-second timeout as the response deadline. The SDK's
+// slightly longer timeout bounds the uncancelled request after the route
+// responds, and disabling retries avoids another provider call in that tail.
+const REQUEST_TIMEOUT_MS = 35_000;
+const MAX_RETRIES = 0;
 const MAX_OUTPUT_TOKENS = 8_000;
 const MIN_TRANSCRIPT_WORDS = 5;
 
@@ -120,18 +124,6 @@ const FEEDBACK_SCHEMA: Record<string, unknown> = {
 
 type CoverageStatus = Feedback["keyPointCoverage"][number]["status"];
 const COVERAGE_STATUSES: readonly CoverageStatus[] = ["covered", "partial", "missing"];
-
-/** Returned whenever Claude cannot be used. Must never look like real AI feedback. */
-function unavailableFeedback(): Feedback {
-  return {
-    overallAssessment:
-      "AI feedback is unavailable right now, so this attempt has not been reviewed by the coach. Your transcript and speech statistics above are still accurate. Please try again in a moment.",
-    strengths: [],
-    improvements: [],
-    keyPointCoverage: [],
-    nextSteps: [],
-  };
-}
 
 function notEnoughSpeechFeedback(): Feedback {
   return {
@@ -314,26 +306,27 @@ function describeError(error: unknown): string {
   return "unexpected error";
 }
 
-function logUnavailable(reason: string): void {
-  console.warn(`[analysis] AI feedback unavailable: ${reason}. Returning fallback feedback.`);
+function logFailure(reason: string): void {
+  console.warn(`[analysis] AI feedback unavailable: ${reason}.`);
 }
 
 /**
- * Analyses one practice attempt with Claude. Never throws: on any failure it
- * logs a short reason and returns clearly labelled fallback feedback.
+ * Analyses one practice attempt with Claude. Short transcripts receive
+ * legitimate feedback without requiring the provider. Configuration and
+ * provider failures reject with safe, typed errors for the route to map.
  */
 export async function analyseSpeech(request: AnalysisRequest): Promise<Feedback> {
+  if (countWords(request.transcript) < MIN_TRANSCRIPT_WORDS) {
+    return notEnoughSpeechFeedback();
+  }
+
+  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
+  if (!apiKey) {
+    logFailure("missing ANTHROPIC_API_KEY configuration");
+    throw new AnalysisUnavailableError();
+  }
+
   try {
-    if (countWords(request.transcript) < MIN_TRANSCRIPT_WORDS) {
-      return notEnoughSpeechFeedback();
-    }
-
-    const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
-    if (!apiKey) {
-      logUnavailable("missing ANTHROPIC_API_KEY (add it to server/.env)");
-      return unavailableFeedback();
-    }
-
     const client = new Anthropic({ apiKey, timeout: REQUEST_TIMEOUT_MS, maxRetries: MAX_RETRIES });
     const response = await client.messages.create({
       model: process.env.ANTHROPIC_MODEL?.trim() || DEFAULT_MODEL,
@@ -347,25 +340,26 @@ export async function analyseSpeech(request: AnalysisRequest): Promise<Feedback>
     });
 
     if (response.stop_reason !== "end_turn") {
-      logUnavailable(`unexpected stop reason "${String(response.stop_reason)}"`);
-      return unavailableFeedback();
+      logFailure("unexpected Claude stop reason");
+      throw new AnalysisProviderError();
     }
 
     const textBlock = response.content.find((block) => block.type === "text");
     if (!textBlock || textBlock.type !== "text") {
-      logUnavailable("response had no text output");
-      return unavailableFeedback();
+      logFailure("Claude response had no text output");
+      throw new AnalysisProviderError();
     }
 
     const parsed: unknown = JSON.parse(textBlock.text);
     const result = validateFeedback(parsed, request);
     if (typeof result === "string") {
-      logUnavailable(`invalid response (${result})`);
-      return unavailableFeedback();
+      logFailure(`invalid Claude response (${result})`);
+      throw new AnalysisProviderError();
     }
     return result;
   } catch (error) {
-    logUnavailable(describeError(error));
-    return unavailableFeedback();
+    if (error instanceof AnalysisProviderError) throw error;
+    logFailure(describeError(error));
+    throw new AnalysisProviderError();
   }
 }

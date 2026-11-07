@@ -5,8 +5,13 @@ import { createServer, type Server } from "node:http";
 import test from "node:test";
 import express from "express";
 import {
+  AnalysisProviderError,
+  AnalysisUnavailableError,
+} from "../services/analysisErrors.js";
+import {
   createAnalyzeRouter,
   type AnalyseSpeech,
+  type AnalysisRequest,
   type Feedback,
 } from "./analyze.js";
 
@@ -64,7 +69,12 @@ async function stopTestServer(server: Server): Promise<void> {
 }
 
 test("returns feedback and unchanged server-calculated statistics before timeout", async () => {
-  const { server, baseUrl } = await startTestServer(async () => feedback, 1_000);
+  let receivedInput: AnalysisRequest | undefined;
+  const analyseSpeech: AnalyseSpeech = async (input) => {
+    receivedInput = input;
+    return feedback;
+  };
+  const { server, baseUrl } = await startTestServer(analyseSpeech, 1_000);
   try {
     const response = await fetch(`${baseUrl}/api/analyze`, {
       method: "POST",
@@ -83,6 +93,11 @@ test("returns feedback and unchanged server-calculated statistics before timeout
       fillerWords: { um: 1 },
       sentenceCount: 2,
     });
+    assert.deepEqual(receivedInput, {
+      presentation,
+      transcript: requestBody.transcript,
+      statistics: result.statistics,
+    });
   } finally {
     await stopTestServer(server);
   }
@@ -93,7 +108,7 @@ test("returns 504 at timeout while server stays responsive and work continues", 
   const slowService: AnalyseSpeech = async () => {
     await new Promise((resolve) => setTimeout(resolve, 80));
     completedAfterTimeout = true;
-    return feedback;
+    throw new AnalysisUnavailableError();
   };
   const { server, baseUrl } = await startTestServer(slowService, 10);
 
@@ -120,7 +135,49 @@ test("returns 504 at timeout while server stays responsive and work continues", 
   }
 });
 
-test("returns a safe 502 for an unexpected AI service failure", async () => {
+test("maps AnalysisUnavailableError to a safe 503", async () => {
+  const unavailableService: AnalyseSpeech = async () => {
+    throw new AnalysisUnavailableError();
+  };
+  const { server, baseUrl } = await startTestServer(unavailableService, 1_000);
+
+  try {
+    const response = await fetch(`${baseUrl}/api/analyze`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(requestBody),
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 503);
+    assert.deepEqual(body, { error: "AI analysis is not available yet. Please try again later." });
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("maps AnalysisProviderError to a safe 502", async () => {
+  const providerFailure: AnalyseSpeech = async () => {
+    throw new AnalysisProviderError();
+  };
+  const { server, baseUrl } = await startTestServer(providerFailure, 1_000);
+
+  try {
+    const response = await fetch(`${baseUrl}/api/analyze`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(requestBody),
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 502);
+    assert.deepEqual(body, { error: "Speech analysis failed. Please try again." });
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("maps unexpected AI-service errors to a safe 502", async () => {
   const failingService: AnalyseSpeech = async () => {
     throw new Error("provider secret detail");
   };

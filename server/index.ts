@@ -2,6 +2,7 @@ import express, { type ErrorRequestHandler } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { createAnalyzeRouter } from "./routes/analyze.js";
+import { analyseSpeech } from "./services/analysis.js";
 
 dotenv.config();
 
@@ -19,9 +20,7 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
-// Member 3's analysis function is not present yet. Keep the HTTP and
-// validation boundary available without returning fabricated feedback.
-app.use("/api/analyze", createAnalyzeRouter());
+app.use("/api/analyze", createAnalyzeRouter(analyseSpeech));
 
 const jsonErrorHandler: ErrorRequestHandler = (err: unknown, _req, res, next) => {
   if (typeof err === "object" && err !== null && "type" in err) {

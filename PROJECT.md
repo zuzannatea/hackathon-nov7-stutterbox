@@ -223,9 +223,14 @@ Request: `application/json`
 
 The backend validates this payload, caps the JSON body at 1 MB and the
 transcript at 20,000 characters, and calculates statistics itself. The
-route is implemented, but Member 3's callable Claude analysis service is
-not yet available in the repository; valid requests currently receive a
-safe `503 Service Unavailable` response until that integration is added.
+route calls Member 3's `analyseSpeech` service. It returns safe `503`
+responses when AI configuration is unavailable, `502` for provider or
+unexpected service failures, and `504` when the route's 30-second analysis
+deadline is reached. Short transcripts receive the service's legitimate
+short-speech feedback without calling Claude. The application build and
+deterministic backend tests verify the integration boundary; successful
+Claude-backed feedback still requires a configured API key and a live
+provider test.
 
 Example presentation object:
 
@@ -252,8 +257,8 @@ interface SpeechStatistics {
 }
 ```
 
-The statistics service is implemented in `server/services/statistics.ts`
-and has passed the backend TypeScript build. Its MVP rules count
+The statistics service is implemented in `server/services/statistics.ts`.
+Its MVP rules count
 whitespace-separated words, punctuation-based sentences, and the
 case-insensitive fillers `um`, `uh`, `erm`, and `er`. Invalid or
 non-positive durations normalize to zero. The team reviewed and accepted
@@ -276,8 +281,9 @@ interface AnalysisRequest {
 
 The backend route exports the integration boundary
 `AnalyseSpeech = (input: AnalysisRequest) => Promise<Feedback>`, where
-`Feedback` is the response's `feedback` object below. Member 3 should
-provide a function matching this contract; the route does not implement
+`Feedback` is the response's `feedback` object below. Member 3's
+`analyseSpeech` implementation matches this contract. Typed service errors
+are mapped by the route to safe HTTP errors; the route does not implement
 Claude calls or substitute placeholder feedback.
 
 Successful response shape:

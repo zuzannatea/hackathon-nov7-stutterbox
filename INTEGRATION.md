@@ -2,8 +2,9 @@
 
 This guide records the current contracts for connecting the frontend,
 backend, and AI analysis service. The backend route and statistics service
-are implemented. The frontend analysis flow and Claude service are not yet
-connected.
+are implemented. The frontend analysis flow is not connected yet. Member 3's
+Claude service is connected to the Express route. Live Claude-backed feedback
+still requires a configured API key and provider verification.
 
 ## 1. Current status and source of truth
 
@@ -11,9 +12,12 @@ connected.
   `server/routes/analyze.ts`; validation limits and error handling there
   are authoritative.
 - `SpeechStatistics` is exported from `server/services/statistics.ts`.
-- The backend currently mounts `createAnalyzeRouter()` without an AI
-  service, so every valid analysis request returns `503` until Member 3's
-  function is connected.
+- `server/index.ts` injects `analyseSpeech` into `createAnalyzeRouter`.
+  Short transcripts return the AI service's deterministic short-speech
+  feedback without calling Claude.
+- With a longer transcript, missing AI configuration returns `503`, provider
+  or unexpected service failures return `502`, and the route deadline returns
+  `504`.
 - `client/src/services/speechRecognition.ts` provides a standalone Web
   Speech API utility. It is not yet wired into the React app.
 - `client/src/App.tsx` currently checks only `/api/health`. There is no
@@ -179,7 +183,8 @@ Validation constraints in the current route:
 - `inspiration`: optional string, at most 5,000 characters.
 - Total JSON body: at most 1 MB.
 
-Successful response JSON (once the AI service is connected):
+Illustrative successful AI response shape (live Claude-backed output has not
+yet been verified):
 
 ```json
 {
@@ -268,15 +273,16 @@ response above: `overallAssessment`, `strengths`, `improvements`,
 `keyPointCoverage`, `nextSteps`, and optional `suggestedRewrite`. Coverage
 statuses are exactly `covered`, `partial`, or `missing`. Member 3 owns
 Claude calls, prompt design, and runtime validation of Claude's output.
-The function should reject/throw on API failure or invalid model output;
-the route converts a thrown error to a safe `502` response.
+`server/services/analysis.ts` exports `analyseSpeech` and uses
+`AnalysisUnavailableError` and `AnalysisProviderError` from
+`server/services/analysisErrors.ts` for failures. Short transcripts still
+return legitimate feedback without calling Claude.
 
-Member 3 should tell Member 2 the importable function name and file path.
-Member 2 then imports that function and passes it to
-`createAnalyzeRouter(analyseSpeech)` in `server/index.ts`. The Anthropic
-SDK and `ANTHROPIC_API_KEY` setup belong to Member 3; the key must remain
-backend-only. Do not change the route or shared types without coordinating
-with Member 2 and Member 1.
+The function is imported by `server/index.ts` and passed to
+`createAnalyzeRouter(analyseSpeech)`. The Anthropic SDK and
+`ANTHROPIC_API_KEY` setup belong to Member 3; the key must remain
+backend-only. Do not change the shared API types without coordinating with
+Member 1 and Member 3.
 
 ## 4. Error responses
 
@@ -286,20 +292,21 @@ Errors are JSON objects with an `error` string.
 |---|---|---|
 | `400 Bad Request` | Non-object body, missing/empty transcript, invalid presentation, invalid duration/inspiration, or malformed JSON | `{"error":"Transcript cannot be empty."}` |
 | `413 Payload Too Large` | Request exceeds 1 MB, or transcript exceeds 20,000 characters | `{"error":"Request body is too large."}` |
-| `502 Bad Gateway` | Connected `AnalyseSpeech` function throws or rejects | `{"error":"Speech analysis failed. Please try again."}` |
+| `502 Bad Gateway` | `AnalysisProviderError` or unexpected service failure | `{"error":"Speech analysis failed. Please try again."}` |
 | `504 Gateway Timeout` | AI analysis does not settle within the route timeout (30 seconds by default) | `{"error":"Speech analysis timed out. Please try again."}` |
-| `503 Service Unavailable` | Current state: no AI service passed to the route | `{"error":"AI analysis is not available yet. Please try again later."}` |
+| `503 Service Unavailable` | `AnalysisUnavailableError` (for example, missing API key); also returned if no service is injected | `{"error":"AI analysis is not available yet. Please try again later."}` |
 | `500 Internal Server Error` | Unexpected backend error | `{"error":"An unexpected server error occurred."}` |
 
-The current `503` is expected while Member 3's service is not connected;
-it does not mean the request was invalid. The frontend should explain that
-analysis is temporarily unavailable and allow a retry.
+The route checks its timeout before mapping service errors, preserving `504`
+when its 30-second deadline wins. The frontend should explain unavailable
+analysis and allow a retry; it should display `response.error` for all error
+statuses.
 
-The `504` timeout stops the route from waiting, but does **not** cancel the
-underlying AI/provider request. The current `AnalyseSpeech` interface does
-not pass an `AbortSignal`; a timed-out provider operation may continue in
-the background. Keep this limitation in mind when retrying a timed-out
-request.
+The Anthropic SDK timeout is 35 seconds with retries disabled, while the
+route responds at 30 seconds. This bounds an uncancelled provider operation
+to roughly five seconds after a route timeout. The `AnalyseSpeech` interface
+does not pass an `AbortSignal`, so the route cannot cancel the underlying
+request at its deadline.
 
 ## 5. Backend verification commands
 
@@ -326,16 +333,18 @@ default.
 
 `npm run test:integration` sends HTTP requests to the running Express
 server. It covers health, request validation, malformed and oversized
-JSON, the expected `503` while the AI service is missing, and health
-checks after rejected payloads. Set `BASE_URL` to target another server,
+JSON, and a short-transcript `200` response with deterministic feedback.
+The short transcript does not call Claude, so this test does not spend API
+credit. Set `BASE_URL` to target another server,
 for example `BASE_URL=http://localhost:3000 npm run test:integration`.
 This script does not start or stop the server. It reports an actionable
 message and exits if the server cannot be reached.
 
-HTTP integration tests do not inject an AI service. Successful AI
-responses, timeouts, and AI-service errors remain covered by the
-route-level tests; the timeout still does not cancel its underlying
-provider request.
+Route tests use injected fake services for success, typed error mappings,
+unexpected failures, and the timeout path. These tests do not call Claude.
+The separate `npm run test:ai` script performs real provider requests when
+`ANTHROPIC_API_KEY` is configured and may use API credit; it is not part of
+the deterministic test suite.
 
 ## 6. Integration checklist
 
@@ -356,17 +365,17 @@ provider request.
 
 ### Member 2 + Member 3
 
-- [ ] Confirm Member 3's exported function satisfies
+- [x] Confirm Member 3's exported function satisfies
   `AnalyseSpeech = (input: AnalysisRequest) => Promise<Feedback>`.
-- [ ] Pass the real function to `createAnalyzeRouter` and confirm valid
-  requests no longer return `503`.
-- [ ] Verify the AI function receives the exact presentation, final
-  transcript, server-calculated statistics, and optional inspiration.
+- [x] Pass the real function to `createAnalyzeRouter`; the deterministic
+  HTTP test exercises the short-transcript response without calling Claude.
+- [x] Verify the route passes presentation, transcript, and server-calculated
+  statistics to its injected analysis function.
 - [ ] Test representative Claude output and verify the full response
   schema, including coverage enums and optional fields.
-- [ ] Make Claude/API errors and invalid model output reject safely and
-  produce the route's generic `502`; confirm no key or internal details
-  appear in the response.
+- [x] Verify `AnalysisUnavailableError` maps to `503`, `AnalysisProviderError`
+  and unexpected failures map to `502`, and timeout maps to `504`; confirm no
+  raw error details appear in HTTP responses.
 
 ### Whole flow
 

@@ -8,6 +8,7 @@
 import "dotenv/config";
 import { calculateSpeechStatistics } from "../services/statistics.js";
 import { analyseSpeech } from "../services/analysis.js";
+import { AnalysisProviderError, AnalysisUnavailableError } from "../services/analysisErrors.js";
 import type { AnalyseSpeech, Feedback, Presentation } from "../routes/analyze.js";
 
 // Compile-time check that the service matches Member 2's route interface.
@@ -108,10 +109,6 @@ const SAMPLES: Sample[] = [
   },
 ];
 
-function isFallback(feedback: Feedback): boolean {
-  return feedback.overallAssessment.startsWith("AI feedback is unavailable");
-}
-
 function isNotEnoughSpeech(feedback: Feedback): boolean {
   return feedback.overallAssessment.startsWith("We couldn't hear enough speech");
 }
@@ -133,22 +130,41 @@ async function main(): Promise<void> {
   console.log(`API key present: ${process.env.ANTHROPIC_API_KEY?.trim() ? "yes" : "no"}`);
   console.log(`Model: ${process.env.ANTHROPIC_MODEL?.trim() || "(default in analysis.ts)"}\n`);
 
+  let failed = false;
+
   for (const sample of SAMPLES) {
     const statistics = calculateSpeechStatistics(sample.transcript, sample.durationSeconds);
     const started = Date.now();
-    const feedback = await runAnalysis({
-      presentation: sample.presentation,
-      transcript: sample.transcript,
-      statistics,
-      ...(sample.inspiration ? { inspiration: sample.inspiration } : {}),
-    });
+    let feedback: Feedback;
+
+    try {
+      feedback = await runAnalysis({
+        presentation: sample.presentation,
+        transcript: sample.transcript,
+        statistics,
+        ...(sample.inspiration ? { inspiration: sample.inspiration } : {}),
+      });
+    } catch (error) {
+      failed = true;
+      console.log(`=== ${sample.name} ===`);
+      if (error instanceof AnalysisUnavailableError) {
+        console.error("Result:        FAILED (AI configuration unavailable; check ANTHROPIC_API_KEY)");
+        break;
+      }
+      if (error instanceof AnalysisProviderError) {
+        console.error("Result:        FAILED (Claude request or response validation failed)");
+      } else {
+        console.error("Result:        FAILED (unexpected analysis test error)");
+      }
+      console.log();
+      continue;
+    }
+
     const seconds = ((Date.now() - started) / 1000).toFixed(1);
 
-    const kind = isFallback(feedback)
-      ? "FALLBACK (AI feedback unavailable)"
-      : isNotEnoughSpeech(feedback)
-        ? "NOT ENOUGH SPEECH (Claude skipped)"
-        : "REAL CLAUDE FEEDBACK";
+    const kind = isNotEnoughSpeech(feedback)
+      ? "NOT ENOUGH SPEECH (Claude skipped)"
+      : "REAL CLAUDE FEEDBACK";
     const expectedPoints = sample.presentation.keyPoints.length;
     const coverageOk = feedback.keyPointCoverage.length === expectedPoints;
     const wordingOk = feedback.keyPointCoverage.every(
@@ -166,6 +182,8 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(feedback, null, 2));
     console.log();
   }
+
+  if (failed) process.exitCode = 1;
 }
 
 await main();

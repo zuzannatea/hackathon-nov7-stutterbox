@@ -278,16 +278,28 @@ Member 2 has already implemented:
 - Error handling.
 - The response structure.
 
-At present, valid requests return `503 Service Unavailable` because the AI service has not yet been supplied.
+The AI service is present at `server/services/analysis.ts` and exports
+`analyseSpeech(request: AnalysisRequest): Promise<Feedback>`. The backend entry
+point passes it to the Express route.
+
+The service returns normal feedback for transcripts under five words without
+calling Claude. For other requests, it throws `AnalysisUnavailableError`
+from `server/services/analysisErrors.ts` when the API key is unavailable and
+`AnalysisProviderError` when Claude fails or its response cannot be validated.
+These errors have generic messages and contain no provider response details.
+The route maps unavailable configuration to `503` and provider failures to
+`502`; unexpected service failures also receive a safe `502` response.
 
 The route uses a 30-second timeout by default and returns `504 Gateway
-Timeout` if the service does not settle in time. The current integration
-interface does not pass an `AbortSignal`, so this timeout stops the route
-from waiting but does not cancel an in-flight Claude/provider request.
-The provider operation may continue after the frontend receives the
-timeout response.
+Timeout` if the service does not settle in time. The Anthropic SDK request
+timeout is 35 seconds with retries disabled. The integration interface does
+not pass an `AbortSignal`, so a timed-out provider request can continue for
+up to roughly five seconds after the frontend receives `504`.
 
-Your deliverable is the analysis function that Member 2 can connect to the route.
+The route wiring and typed error mapping are implemented. Live Claude-backed
+feedback still requires an API key and a separate provider test; the
+deterministic HTTP test uses the short-transcript path and does not call
+Claude.
 
 Please communicate:
 1. The function's exported name.
