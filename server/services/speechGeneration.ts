@@ -101,7 +101,13 @@ export const generateSpeech: GenerateSpeech = async (brief) => {
       fallbacks: "default",
     });
   } catch (error) {
-    const kind = error instanceof Anthropic.APIError ? `API error ${error.status ?? "unknown"}` : "request error";
+    // Safe log: error type + HTTP status only (never the key, prompt or speech).
+    const errorType =
+      error instanceof Anthropic.APIError
+        ? ((error.error as { error?: { type?: string } } | undefined)?.error?.type ?? error.name)
+        : (error as Error).name;
+    const kind =
+      error instanceof Anthropic.APIError ? `API error ${error.status ?? "unknown"} (${errorType})` : `request error (${errorType})`;
     logFailure(kind);
     throw new SpeechGenerationFailedError();
   }
