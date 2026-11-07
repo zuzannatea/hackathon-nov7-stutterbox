@@ -26,18 +26,22 @@ plans conflict, the existing Stutterbox project plan takes priority.
 
 ### Decisions that are overridden
 
--   **Recording/transcription:** Use browser `MediaRecorder` to record
-    audio, then upload the audio to the Express backend for
-    transcription. Do not make browser `SpeechRecognition` / live
-    transcription the primary path. Browser speech recognition has
-    inconsistent support and would bypass the planned transcription
-    pipeline.
+-   **Live transcription:** Use the browser Web Speech API
+    (`SpeechRecognition`, with `webkitSpeechRecognition` fallback where
+    needed) to display words while the user speaks. Collect finalised
+    recognition results into a complete transcript when the user stops.
+    Interim results are provisional and must not be appended repeatedly.
+    The browser submits the final transcript and duration to the backend;
+    no audio upload or server-side transcription is required for the MVP.
+    Test the intended demo browser early because support varies and the
+    recognition service may be remote.
 -   **Backend architecture:** Use the existing Node + Express +
     TypeScript backend. Do not create a separate Vercel serverless
     `api/` architecture or duplicate endpoints.
 -   **Main endpoint:** Use `POST /api/analyze`, not a separate
-    `/api/feedback` endpoint. The backend should orchestrate
-    transcription, statistics, and AI analysis in one request.
+    `/api/feedback` endpoint. The backend receives the final transcript,
+    presentation context, and duration; it calculates statistics and
+    calls Claude for analysis.
 -   **AI input:** AI analysis receives the presentation context,
     transcript, statistics, and optional inspiration text---not just a
     prebuilt `session` and `results` object.
@@ -57,17 +61,16 @@ plans conflict, the existing Stutterbox project plan takes priority.
   --------------------------------------------------------------------------------
   Member                  Workstream              Primary ownership
   ----------------------- ----------------------- --------------------------------
-  **Member 1**            Frontend                `client/src/`, recording UI,
-                                                  presentation form, results UI,
-                                                  styling
+  **Member 1**            Frontend                `client/src/`, React UI, Web Speech API,
+                                                  live/final transcript, timer,
+                                                  frontend API client, results UI
 
-  **Member 2**            Backend                 `server/index.ts`, routes,
-                                                  upload handling, transcription,
-                                                  statistics
+  **Member 2**            Backend                 `server/index.ts`, `POST /api/analyze`,
+                                                  JSON validation, transcript handling,
+                                                  statistics, error handling, orchestration
 
-  **Member 3**            AI                      `server/services/analysis.ts`,
-                                                  prompts, AI response schema and
-                                                  validation
+  **Member 3**            AI integration          Claude SDK, prompts, AI analysis service,
+                                                  feedback schema, model response parsing
   --------------------------------------------------------------------------------
 
 **Collaboration rule:** Work primarily in your owned files. Agree on
@@ -119,19 +122,31 @@ interface AnalysisRequest {
 
 ### Main HTTP request
 
-`POST /api/analyze` using `multipart/form-data`:
+`POST /api/analyze` using `application/json`:
 
--   `audio`: recorded audio file
--   `presentation`: JSON-encoded `Presentation`
+-   `transcript`: complete final transcript assembled by the frontend
+-   `presentation`: `Presentation` object
+-   `durationSeconds`: elapsed presentation duration measured by the frontend
 -   `inspiration`: optional text
 
-The backend performs the following sequence:
+The backend performs the following sequence (Member 2 owns these steps):
 
-1.  Validate the request and audio file.
-2.  Transcribe the audio.
-3.  Calculate statistics.
-4.  Call the AI analysis service with `AnalysisRequest`.
-5.  Validate and return the combined result.
+1.  Validate the request, presentation, transcript, and duration.
+2.  Calculate statistics from the transcript and duration.
+3.  Call Member 3's AI analysis service through the agreed function
+    interface, passing an `AnalysisRequest`.
+4.  Combine the returned feedback with the transcript and statistics,
+    then return the agreed response.
+
+Member 3 owns the implementation of the AI analysis service and the
+Claude-specific prompt / response handling. Member 2 owns the Express
+route and calls that service; Member 2 should not implement a second
+Claude client or duplicate Member 3's AI logic.
+
+The frontend uses Web Speech API for live/interim display and stores
+finalised recognition results for the final transcript. Do not send
+interim text as the final transcript or upload audio to the backend in
+this MVP. The API key for Claude remains in the backend environment.
 
 ### Response shape
 
@@ -185,36 +200,45 @@ shape.
     repository.
 -   [ ] Confirm the shared contracts in section 2.
 -   [ ] Member 3: arrange access to an API key and confirm API
-    billing/access works. Never commit the key.
+    billing/access works. Coordinate backend environment setup with
+    Member 2; never commit the key.
 -   [ ] Agree who will integrate and resolve conflicts near the merge
     checkpoints.
 
 ### 11:20--1:00 --- Build the MVP pieces in parallel
 
-**Goal by 1:00:** frontend works with mock results; backend can accept
-audio and produce a transcript/statistics; AI service can analyse sample
-text independently.
+**Goal by 1:00:** frontend can display live speech-recognition text;
+backend accepts a transcript and produces statistics; AI service can
+analyse sample text independently.
 
 -   [ ] Member 1: build presentation-context form.
--   [ ] Member 1: build recording component with `MediaRecorder`.
--   [ ] Member 1: show recording state, elapsed time, stop control, and
-    useful permission/error messages.
+-   [ ] Member 1: implement browser Web Speech API recognition
+    (`SpeechRecognition` / `webkitSpeechRecognition`) with continuous
+    recognition and interim results.
+-   [ ] Member 1: display live interim text and accumulate finalised
+    results without duplicating words.
+-   [ ] Member 1: show listening state, elapsed-time timer, stop control,
+    and useful microphone/unsupported-browser/error messages.
+-   [ ] Member 1: confirm the full final transcript remains available
+    after recognition stops; add manual transcript fallback if time allows.
 -   [ ] Member 1: build results screen using mock `AnalysisResponse`
     data.
 -   [ ] Member 1: implement the API client function for
     `POST /api/analyze` (integration can wait).
--   [ ] Member 2: create `POST /api/analyze` route and Multer upload
-    handling.
--   [ ] Member 2: parse and validate presentation form data.
--   [ ] Member 2: implement transcription service using the OpenAI audio
-    transcription API.
--   [ ] Member 2: implement deterministic statistics: duration, word
-    count, WPM, filler-word counts, and sentence count where practical.
--   [ ] Member 2: return a temporary/mock feedback object until Member
-    3's service is ready.
+-   [ ] Member 2: create `POST /api/analyze` route using JSON request
+    parsing (no Multer/audio upload needed for this MVP).
+-   [ ] Member 2: validate presentation, transcript, and duration.
+-   [x] Member 2: implement `calculateSpeechStatistics` in
+    `server/services/statistics.ts` and confirm the server TypeScript
+    build succeeds.
+-   [ ] Member 2: create the route with a temporary/mock feedback
+    response until Member 3's AI service is ready.
 -   [ ] Member 3: define the AI feedback schema and prompt.
--   [ ] Member 3: implement
-    `analyseSpeech({ presentation, transcript, statistics, inspiration })`.
+-   [ ] Member 3: implement the agreed AI service function (for example,
+    `analyseSpeech({ presentation, transcript, statistics, inspiration })`)
+    using the Anthropic Claude SDK and a backend-only
+    `ANTHROPIC_API_KEY`. Agree the exact export and file location with
+    Member 2 before implementation.
 -   [ ] Member 3: test the prompt with at least three different sample
     transcripts.
 -   [ ] Member 3: ensure feedback is specific, constructive, and
@@ -223,66 +247,75 @@ text independently.
 
 ### 1:00--1:30 --- First integration checkpoint
 
-**Goal by 1:30:** a recording can travel from the browser to the backend
-and produce a real transcript and statistics. AI can be temporarily
-mocked if necessary.
+**Goal by 1:30:** the browser displays live speech recognition, produces
+a complete transcript, and submits it to the backend for statistics. AI
+can be temporarily mocked if necessary.
 
--   [ ] Member 1 + Member 2: connect the recording form to
+-   [ ] Member 1 + Member 2: connect the final transcript submission to
     `POST /api/analyze`.
--   [ ] Member 2: verify audio upload, transcription, and statistics end
-    to end.
--   [ ] Member 3: connect the AI service to the backend route, or agree
-    a precise integration point.
+-   [ ] Member 1 + Member 2: verify final transcript submission and
+    statistics end to end.
+-   [ ] Member 2 + Member 3: connect Member 2's route to Member 3's
+    AI service using the agreed function interface. Member 2 owns the
+    route; Member 3 owns the AI service implementation.
 -   [ ] Everyone: resolve request/response type mismatches.
--   [ ] Everyone: test one complete request using a short sample
-    recording.
--   [ ] Agree on a fallback if the transcription or AI API is
-    unavailable.
+-   [ ] Everyone: test one complete request using a short live speech.
+-   [ ] Agree on a fallback if browser speech recognition or the Claude
+    API is unavailable.
 
 ### 1:30--3:15 --- Complete the experience and improve reliability
 
 **Goal by 3:15:** complete local user journey, useful feedback, and no
 critical integration blockers.
 
-**Member 1 --- Frontend** - \[ \] Improve form layout and validation. -
-\[ \] Add recording timer and clear recording/upload/analysis states. -
-\[ \] Add results cards for duration, word count, WPM, and filler
-words. - \[ \] Display transcript. - \[ \] Display strengths,
-improvements, key-point coverage, and next steps. - \[ \] Add a clear
-"Try again" action. - \[ \] Make the UI readable at
-presentation/projector size and on a narrow screen. - \[ \] Show
-understandable errors for microphone permission, unsupported recording,
-and failed analysis.
+**Member 1 --- Frontend**
 
-**Member 2 --- Backend** - \[ \] Handle empty transcript and
-zero-duration edge cases. - \[ \] Validate audio file presence, type,
-and size. - \[ \] Return useful status codes and safe error messages. -
-\[ \] Ensure temporary audio files/buffers are not retained
-unnecessarily. - \[ \] Add sensible request timeout/error handling where
-practical. - \[ \] Confirm API key is read only from backend environment
-variables. - \[ \] Help integrate and debug the complete flow.
+- \[ \] Improve form layout and validation.
+- \[ \] Add a clear listening state, elapsed-time timer, and stop control.
+- \[ \] Show live interim transcript text and preserve finalised results.
+- \[ \] Add results cards for duration, word count, WPM, and filler words.
+- \[ \] Display the complete transcript, strengths, improvements, key-point coverage, and next steps.
+- \[ \] Add a clear "Try again" action.
+- \[ \] Make the UI readable at presentation/projector size and on a narrow screen.
+- \[ \] Show understandable errors for microphone permission, unsupported speech recognition, recognition interruption, and failed analysis.
 
-**Member 3 --- AI** - \[ \] Ensure output follows the agreed response
-schema. - \[ \] Validate or safely parse the model response. - \[ \]
-Make coverage statuses explicit: `covered`, `partial`, or `missing`. -
-\[ \] Require examples/evidence from the transcript for improvement
-feedback where possible. - \[ \] Avoid generic advice and unsupported
-claims about confidence, emotion, tone, or vocal variety. - \[ \] Add a
-friendly fallback if the AI call fails or times out. - \[ \] Hand the
-working AI service to Member 2 for route integration and Member 1 for
-display.
+**Member 2 --- Backend**
 
-**Everyone** - \[ \] Test at least three different sample speeches. - \[
-\] Fix critical bugs before adding stretch features. - \[ \] Push
-integrated changes to GitHub regularly.
+- \[ \] Handle empty transcript and zero-duration edge cases.
+- \[ \] Validate transcript, presentation data, and duration.
+- \[ \] Return useful status codes and safe error messages.
+- \[ \] Add sensible request timeout/error handling where practical.
+- \[ \] Read Member 3's AI service through the agreed interface and
+  handle its returned result/errors; do not implement Claude calls here.
+- \[ \] Help integrate and debug the complete flow.
+
+**Member 3 --- AI**
+
+- \[ \] Ensure output follows the agreed response schema.
+- \[ \] Validate or safely parse the model response.
+- \[ \] Make coverage statuses explicit: `covered`, `partial`, or `missing`.
+- \[ \] Require examples/evidence from the transcript for improvement feedback where possible.
+- \[ \] Avoid generic advice and unsupported claims about confidence, emotion, tone, or vocal variety.
+- \[ \] Add a friendly fallback if the Claude call fails or times out.
+- \[ \] Provide Member 2 with the agreed callable AI-service interface
+  and response type; support integration without taking ownership of
+  the Express route or frontend.
+
+**Everyone**
+
+- \[ \] Test at least three different sample speeches.
+- \[ \] Fix critical bugs before adding stretch features.
+- \[ \] Push integrated changes to GitHub regularly.
 
 ### 3:15--4:00 --- Polish and code freeze
 
 -   [ ] Freeze feature development at 4:00.
 -   [ ] Test the full flow from a fresh page load.
 -   [ ] Test microphone permission granted and denied.
--   [ ] Test a short recording and a longer recording.
--   [ ] Test missing/empty input and API failure behaviour.
+-   [ ] Test live interim text and final transcript assembly.
+-   [ ] Test a short speech and a longer speech.
+-   [ ] Test unsupported browser/recognition errors, missing input, and
+    Claude API failure behaviour.
 -   [ ] Check that no API key or `.env` file is tracked by Git.
 -   [ ] Check the browser console and backend terminal for critical
     errors.
@@ -330,14 +363,15 @@ stability or the deadline.
 
 ## 5. Fallback plan
 
--   **Transcription API unavailable:** use a clearly labelled demo
-    transcript or a text-entry fallback. Do not pretend it came from the
-    microphone.
+-   **Browser speech recognition unavailable:** use a clearly labelled
+    demo transcript or a manual text-entry fallback. Do not pretend it
+    came from the microphone.
 -   **AI analysis unavailable:** show deterministic statistics and
     prewritten, clearly labelled general tips. Mention AI analysis as
     unavailable in the demo rather than fabricating AI output.
--   **Microphone/recording unreliable:** use a pre-recorded sample audio
-    file or a clearly labelled pasted transcript for the demo.
+-   **Microphone/speech recognition unreliable:** use a clearly labelled
+    pasted transcript for the demo. Do not imply that it was transcribed
+    live.
 -   **Integration blocked:** use the agreed mock `AnalysisResponse` so
     the frontend demo remains presentable.
 -   **A task is blocked for more than 20--30 minutes:** tell the team,
@@ -350,9 +384,9 @@ stability or the deadline.
 
 -   [ ] The app opens successfully.
 -   [ ] The user can enter the topic, audience, purpose, and key points.
--   [ ] The user can record a short speech or use the documented demo
-    fallback.
--   [ ] The app produces a transcript.
+-   [ ] The user can speak into the microphone and see live words, or use
+    the documented demo fallback.
+-   [ ] The app retains and displays the complete final transcript.
 -   [ ] The app displays real, correctly labelled statistics.
 -   [ ] The app provides useful feedback tied to the intended key points
     and transcript.

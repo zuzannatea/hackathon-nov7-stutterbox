@@ -53,9 +53,9 @@ flow over a large feature set.
     -   key points to cover
     -   desired duration
     -   preferred tone (if useful)
--   Browser-based audio recording.
--   Upload of the recording to the backend.
--   Speech-to-text transcription.
+-   Browser-based live speech recognition using the Web Speech API, with words displayed while the user speaks.
+-   A complete final transcript assembled from recognition results when the user stops.
+-   Submission of the final transcript and presentation context to the backend for analysis; no audio upload is required for the MVP.
 -   Basic statistics calculated from the recording/transcript:
     -   recording duration
     -   word count
@@ -84,7 +84,7 @@ Only attempt these after the complete MVP works:
 
 ### Explicitly out of scope for the hackathon MVP
 
--   Real-time, live coaching while the user speaks.
+-   AI-generated coaching or feedback while the user speaks (live transcription is in scope; live analysis is not).
 -   Speaker identification or multi-speaker diarisation.
 -   Facial-expression, posture, or body-language analysis.
 -   Reliable emotion, confidence, enthusiasm, or vocal-variety scoring.
@@ -126,7 +126,9 @@ something directly visible in the transcript or calculated statistics. -
 -   React
 -   TypeScript
 -   Vite
--   Browser `MediaRecorder` API for recording
+-   Browser Web Speech API (`SpeechRecognition`, with the
+    `webkitSpeechRecognition` fallback where needed) for live speech-to-text
+-   A frontend timer to measure the presentation duration
 -   CSS for styling
 
 ### Backend
@@ -134,49 +136,65 @@ something directly visible in the transcript or calculated statistics. -
 -   Node.js
 -   Express
 -   TypeScript
--   Multer for receiving multipart audio uploads
--   OpenAI official JavaScript SDK
+-   `express.json()` for receiving the transcript and presentation data
+-   Anthropic official TypeScript/JavaScript SDK for Claude analysis
 -   dotenv for local environment configuration
 
 ### AI workflow
 
-1.  Receive the audio file and presentation context.
-2.  Transcribe the audio using an OpenAI audio transcription model
-    available to the project.
-3.  Calculate deterministic statistics in application code where
-    practical.
-4.  Send the presentation context, transcript, statistics, and optional
-    inspiration text to an OpenAI text model.
-5.  Request structured feedback that the frontend can render
-    consistently.
-6.  Validate the response before returning it to the frontend.
+1.  The browser starts speech recognition and displays interim words
+    while the user speaks.
+2.  The frontend collects finalised recognition results into a complete
+    transcript. Interim results are provisional and must not be appended
+    repeatedly to the final transcript.
+3.  When the user stops, the frontend sends the final transcript,
+    presentation context, recording duration, and optional inspiration
+    text to the Express backend.
+4.  The backend calculates deterministic statistics in application code
+    where practical.
+5.  The backend sends the presentation context, transcript, statistics,
+    and optional inspiration text to Claude.
+6.  Request structured feedback that the frontend can render
+    consistently, validate the response, and return it to the frontend.
 
-Model names should be configured centrally rather than scattered through
-the code. Confirm model availability and API requirements against
-current OpenAI documentation when implementing.
+Keep the Claude API key on the backend in `ANTHROPIC_API_KEY`. Configure
+the Claude model centrally rather than scattering its name through the
+code. Confirm model availability and API requirements against current
+Anthropic documentation when implementing. The frontend must never call
+Claude directly.
+
+The Web Speech API has uneven browser support and may rely on a remote
+browser/vendor speech-recognition service; it should not be described as
+necessarily offline or fully private. Test the exact demo browser early
+(Chrome is the intended first test target). Provide a clear unsupported-
+browser/error state and, if time permits, a manual transcript fallback.
+Speech recognition can mishear words or omit disfluencies, so transcript
+accuracy and filler-word statistics are estimates rather than guaranteed
+measurements.
 
 ### Data and persistence
 
 The hackathon MVP does not require a database. Keep the current attempt
-in frontend state and process uploads in memory or temporary storage as
-appropriate. Do not retain recordings longer than needed for the
-request.
+and transcript in frontend state. The backend receives transcript text,
+not raw audio, and does not need to retain the transcript after returning
+the analysis response.
 
 ## 7. High-level architecture
 
 ``` text
 React frontend
     |
-    | multipart/form-data
-    | audio + presentation context + optional inspiration
+    +--> Web Speech API (live interim + final speech results)
+    |
+    +--> Assemble complete transcript + measure duration
+    |
+    | JSON: transcript + presentation + duration + optional inspiration
     v
 Express backend
     |
-    +--> Audio transcription
-    |
     +--> Deterministic statistics
     |
-    +--> AI feedback analysis
+    +--> Claude analysis (server-side API call)
     |
     v
 Validated JSON response
@@ -185,8 +203,9 @@ Validated JSON response
 React results dashboard
 ```
 
-The frontend should not call OpenAI directly. All API calls that use the
-secret API key must happen on the backend.
+The frontend handles speech recognition; the backend does not receive raw
+audio in the MVP. The frontend must not call Claude directly. All API
+calls that use the secret API key must happen on the backend.
 
 ## 8. API contract
 
@@ -194,10 +213,12 @@ The intended main endpoint is:
 
 `POST /api/analyze`
 
-Request: `multipart/form-data`
+Request: `application/json`
 
--   `audio`: recorded audio file
--   `presentation`: JSON-encoded presentation details
+-   `transcript`: complete final transcript assembled by the browser
+    speech-recognition client
+-   `presentation`: `Presentation` object
+-   `durationSeconds`: elapsed presentation duration measured by the frontend
 -   `inspiration`: optional text
 
 Example presentation object:
@@ -270,6 +291,35 @@ Treat this as the target contract, not a reason to over-engineer. If the
 team changes the contract, update the frontend, backend, and AI
 implementation together.
 
+### Team ownership and integration boundaries
+
+The three team members have separate primary responsibilities. Keep these
+boundaries clear so that parallel work does not create overlapping
+implementations.
+
+- **Member 1 — Frontend only:** owns the React interface, presentation
+  form, browser Web Speech API integration, live/interim transcript
+  display, final transcript assembly, recording controls and timer,
+  results dashboard, frontend API client, and user-facing loading/error
+  states. Member 1 does not implement Express routes or Claude calls.
+- **Member 2 — Backend only:** owns the Express backend and
+  `POST /api/analyze`, JSON request parsing, request validation,
+  transcript handling, deterministic speech statistics, backend error
+  handling, and orchestration of the request. Member 2 calls Member 3's
+  agreed AI service; Member 2 does not implement Claude prompts or make
+  direct Claude SDK calls.
+- **Member 3 — AI integration only:** owns the Claude integration,
+  prompts, AI analysis function/service, feedback schema, and parsing /
+  validation of the model's response. Member 3 exposes an agreed
+  function or service for Member 2 to call and does not redesign the
+  Express route or take ownership of the frontend.
+
+**Integration rule:** agree the request, response, and AI-service
+interfaces before parallel implementation. Member 2 owns the HTTP route
+and invokes Member 3's service. Member 3 owns the implementation behind
+that service boundary. Member 1 consumes the HTTP response and renders
+it. Coordinate any shared-type changes with all affected owners.
+
 ## 9. Quality requirements
 
 -   The user must be able to understand what to do next at every stage.
@@ -279,11 +329,10 @@ implementation together.
     the demo.
 -   Handle microphone permission denial and unsupported browsers
     gracefully.
--   Handle empty or invalid recordings.
--   Show useful errors if upload, transcription, or analysis fails.
--   Validate incoming request data and uploaded file type/size on the
-    backend.
--   Never expose the OpenAI API key to the browser.
+-   Handle empty transcripts, speech-recognition errors, unsupported browsers, and recognition ending unexpectedly.
+-   Show useful errors if speech recognition or analysis fails.
+-   Validate incoming JSON request data and reasonable transcript length on the backend.
+-   Never expose the Anthropic API key to the browser.
 -   Do not log API keys, raw secrets, or unnecessary personal
     audio/transcript data.
 -   Keep AI output structured and validate it before rendering.
@@ -296,13 +345,13 @@ Recommended order:
 
 1.  Make the frontend and backend communicate.
 2.  Build the presentation-context form.
-3.  Implement recording and playback/recording-state controls.
-4.  Upload audio to the backend.
-5.  Get a real transcript from the transcription API.
+3.  Implement browser speech recognition and live transcript display.
+4.  Assemble the complete transcript and measure elapsed duration.
+5.  Send transcript and presentation data to the backend.
 6.  Calculate basic statistics.
-7.  Generate structured feedback.
-8.  Render the results clearly.
-9.  Test the full flow with several short recordings.
+7.  Generate structured feedback with Claude.
+8.  Render the transcript, statistics, and results clearly.
+9.  Test the full flow with several short speeches in the intended browser.
 10. Add a stretch goal only if time remains.
 
 A working end-to-end demonstration is more valuable than several
@@ -313,9 +362,10 @@ disconnected features.
 The MVP is ready to demonstrate when a user can:
 
 -   enter presentation context and key points;
--   record a short speech in the browser;
--   submit the recording successfully;
--   receive a transcript and basic statistics;
+-   speak into the browser microphone and see words appear while speaking;
+-   stop and receive a complete final transcript;
+-   submit the transcript successfully for analysis;
+-   receive basic statistics;
 -   receive feedback grounded in the transcript and intended key points;
     and
 -   understand at least one concrete action to improve the next attempt.
@@ -328,9 +378,8 @@ individual functions.
 Record decisions here as the implementation progresses:
 
 -   Maximum recording duration:
--   Supported audio formats:
--   Exact transcription model:
--   Exact analysis model:
+-   Supported demo browser for Web Speech API: Chrome (test/confirm)
+-   Exact Claude analysis model:
 -   Final feedback schema:
 -   Whether inspiration text is included in the demo:
 -   Whether a second-attempt comparison is feasible:
