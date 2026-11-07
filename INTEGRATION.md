@@ -14,12 +14,126 @@ connected.
 - The backend currently mounts `createAnalyzeRouter()` without an AI
   service, so every valid analysis request returns `503` until Member 3's
   function is connected.
+- `client/src/services/speechRecognition.ts` provides a standalone Web
+  Speech API utility. It is not yet wired into the React app.
 - `client/src/App.tsx` currently checks only `/api/health`. There is no
   frontend analysis request client or results UI yet.
 - The Vite development server proxies `/api` to `http://localhost:3000`;
   the frontend can use relative paths such as `/api/analyze`.
 
-## 2. Member 1: HTTP contract
+## 2. Member 1: speech recognition and HTTP contract
+
+### Web Speech API utility
+
+The utility is exported from
+`client/src/services/speechRecognition.ts`. It does not depend on React or
+render UI. Its factory signature is:
+
+```ts
+createSpeechRecognition(
+  callbacks?: SpeechRecognitionCallbacks,
+  options?: SpeechRecognitionOptions,
+): SpeechRecognitionController
+```
+
+The exported `SpeechRecognitionCallbacks` names and arguments are:
+
+```ts
+interface SpeechRecognitionCallbacks {
+  onInterimTranscript?: (transcript: string) => void;
+  onFinalTranscript?: (segment: string, completeTranscript: string) => void;
+  onStateChange?: (
+    state: "starting" | "listening" | "ended",
+    finalTranscript: string,
+  ) => void;
+  onError?: (failure: SpeechRecognitionFailure) => void;
+  onEnd?: (finalTranscript: string) => void;
+}
+```
+
+`SpeechRecognitionFailure` contains `code`, optional `message`, and
+`finalTranscript`. Its code is the browser's `SpeechRecognitionErrorCode`
+or one of `unsupported`, `start-failed`, `stop-failed`, or `abort-failed`.
+`SpeechRecognitionOptions` accepts `language`, `continuous`, and
+`interimResults`; defaults are `en-US`, `true`, and `true`.
+
+The returned controller has this API:
+
+```ts
+interface SpeechRecognitionController {
+  readonly isSupported: boolean;
+  start(): void;
+  stop(): void;
+  abort(): void;
+  getFinalTranscript(): string;
+}
+```
+
+The utility prefers `window.SpeechRecognition` and falls back to
+`window.webkitSpeechRecognition`. If neither is available,
+`isSupported` is false and calling `start()` reports an `unsupported`
+failure through `onError`.
+
+Interim transcript callbacks contain only provisional text. It may be
+revised by later recognition events and must be used for live display
+only. Final results are accumulated by result index so repeat result
+events do not append duplicate text. `onFinalTranscript` receives the
+newly finalized segment and the complete finalized transcript so far.
+`getFinalTranscript()` returns that complete finalized transcript at any
+time; it excludes provisional text. `onEnd` also receives the final
+transcript after recognition ends.
+
+`start()` creates no additional recognition instance: one instance is
+created when the factory is called. Calling `start()` while it is active
+does nothing and does not reset its transcript. Starting after it has
+ended starts a new session and clears the previous finalized transcript.
+`stop()` asks recognition to stop and the final end callback arrives when
+the browser ends the session. `abort()` asks recognition to abort but
+does not clear already-finalized text. On recognition errors and
+unexpected end events, finalized text remains available from
+`getFinalTranscript()` and is included in the error/end callback data.
+
+There is no separate `dispose()` or callback-detachment method. If the
+React owner unmounts during recognition, call `abort()` and guard its
+callbacks from updating unmounted component state; aborting may still
+lead to browser end/error callbacks.
+
+Example integration pattern (adapt callbacks to Member 1's component
+state; this is not an existing component API):
+
+```ts
+const recognition = createSpeechRecognition(
+  {
+    onInterimTranscript: setInterimTranscript,
+    onFinalTranscript: (_segment, transcript) => setFinalTranscript(transcript),
+    onStateChange: (state, transcript) => {
+      setRecognitionState(state);
+      if (state === "starting") setFinalTranscript(transcript);
+    },
+    onError: (failure) => {
+      setSpeechError(failure.code);
+      setFinalTranscript(failure.finalTranscript);
+    },
+    onEnd: setFinalTranscript,
+  },
+  { language: "en-US" },
+);
+
+recognition.start();
+// Later, when the user stops:
+recognition.stop();
+// The current finalized text is also synchronously retrievable:
+const transcript = recognition.getFinalTranscript();
+```
+
+Keep the controller instance stable across React renders (for example, in a
+ref); recreating it creates a new recognition instance and a new transcript
+session. The frontend should measure elapsed duration separately. When
+speech ends, use the finalized transcript and measured duration in the
+backend JSON request below. Do not upload audio or submit interim text as
+the final transcript.
+
+### Backend HTTP contract
 
 Send the final transcript, not interim Web Speech API text. Send JSON to:
 
