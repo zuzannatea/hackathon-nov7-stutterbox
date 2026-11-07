@@ -401,24 +401,22 @@ the deterministic test suite.
 Do not describe the complete app as integrated until the real frontend
 request/results flow and Member 3's Claude service both pass these checks.
 
-## Speech generation from CSV data (Step 1 "Upload data (.csv)")
+## Speech generation (Step 1 "Generate a speech")
 
 Added by Member 1 with the team's agreement; route and prompt owners should review.
-It replaces the short-lived `POST /api/generate-speech` (free-text description), which was removed.
 
-- Route: `server/routes/generateSpeechFromCsv.ts`, mounted at `POST /api/generate-speech-from-csv`.
-- Service: `server/services/csvSpeech.ts` (Claude call and system prompt). It uses
+- Route: `server/routes/generateSpeech.ts`, mounted at `POST /api/generate-speech`.
+- Service: `server/services/speechGeneration.ts` (Claude call and system prompt). It uses
   `ANTHROPIC_API_KEY` and its own model setting `ANTHROPIC_SPEECH_MODEL`
   (default `claude-sonnet-5-5`, separate from the analysis model), `effort: "low"`,
   no retries, and the server-side refusal fallback (`fallbacks: "default"`).
-- The browser parses the CSV (papaparse, max ~1 MB) and sends a sample, not the file:
-  `{ fileName, rowCount, columns: string[], rows: (string|number|boolean|null)[][],
-  summaries: [{ column, type: "number"|"text"|"empty", count, min?, max?, mean?,
-  topValues?: [{ value, count }] }] }`. `rows` holds at most 200 rows; summaries cover
-  every row. The server re-validates all limits (100 columns, 500-character cells,
-  10 top values) and rebuilds the CSV text itself.
+- Request: `{ "brief": string }`, trimmed, 1–3,000 characters.
+- CSV input is frontend-only: Step 1's "Upload .csv" button reads the file in the browser
+  (FileReader, no library) and writes it into the same prompt as readable text
+  ("Row 1 — Name: …, Role: …"), trimmed to the 3,000-character limit. It uses this same
+  endpoint and request; there is no separate CSV route.
 - Response: `{ "speech": string }`, plain text with paragraphs separated by blank lines.
-- Errors (`{ "error": string }`): `400` invalid data, `422` the model declined,
+- Errors (`{ "error": string }`): `400` invalid or too long, `422` the model declined,
   `502` provider failure, `503` no API key configured, `504` over the 45-second deadline.
 - The generated speech is frontend-only after this call: it becomes the Step 1 speech
   text, exactly like an uploaded document. It is not added to `/api/analyze`.
