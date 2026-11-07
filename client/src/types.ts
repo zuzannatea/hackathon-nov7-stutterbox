@@ -21,12 +21,13 @@ export interface SpeechStatistics {
   wordCount: number;
   wordsPerMinute: number;
   fillerWords: Record<string, number>;
-  sentenceCount: number;
 }
 
 /** AI feedback returned by the backend. */
 export interface Feedback {
   overallAssessment: string;
+  planningAssessment: string;
+  executionAssessment: string;
   strengths: Array<{ title: string; explanation: string; evidence?: string }>;
   improvements: Array<{
     title: string;
@@ -49,11 +50,13 @@ export interface AnalyzeRequestBody {
   presentation: Presentation;
   durationSeconds: number;
   inspiration?: string;
+  intendedSpeech?: string;
 }
 
 /** Successful response from POST /api/analyze. */
 export interface AnalysisResponse {
   transcript: string;
+  formattedTranscript: string;
   statistics: SpeechStatistics;
   feedback: Feedback;
 }
@@ -64,9 +67,8 @@ export interface AnalysisResponse {
 // ---------------------------------------------------------------------------
 
 /**
- * The user's written speech from Step 1. Used only as a reference while
- * practising; it is NOT sent to the backend or part of `Presentation`.
- * TODO: the team may add a "script" field to the API contract later.
+ * The user's written speech from Step 1. Used as a practice reference and
+ * sent separately as optional `intendedSpeech`; it is not part of `Presentation`.
  */
 export interface SpeechDraft {
   title: string;

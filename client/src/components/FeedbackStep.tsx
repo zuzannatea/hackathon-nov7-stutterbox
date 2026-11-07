@@ -15,9 +15,9 @@ export default function FeedbackStep({ analysis, onBack }: FeedbackStepProps) {
       <div className="practise-main">
         <section className="card summary-card" aria-labelledby="analysis-transcript-heading">
           <h2 id="analysis-transcript-heading" className="card-heading-small">
-            Your transcript
+            Formatted transcript
           </h2>
-          <div className="transcript-box">{analysis.transcript}</div>
+          <div className="transcript-box">{analysis.formattedTranscript}</div>
         </section>
 
         <section className="card summary-card" aria-labelledby="statistics-heading">
@@ -28,7 +28,6 @@ export default function FeedbackStep({ analysis, onBack }: FeedbackStepProps) {
             <li className="chip">Duration: {statistics.durationSeconds.toFixed(1)} seconds</li>
             <li className="chip">Words: {statistics.wordCount}</li>
             <li className="chip">Speaking pace: {statistics.wordsPerMinute.toFixed(1)} WPM</li>
-            <li className="chip">Sentences: {statistics.sentenceCount}</li>
           </ul>
           <h3 className="card-heading-small">Filler words</h3>
           {fillerEntries.length > 0 ? (
@@ -49,6 +48,20 @@ export default function FeedbackStep({ analysis, onBack }: FeedbackStepProps) {
             Overall assessment
           </h2>
           <p>{feedback.overallAssessment}</p>
+        </section>
+
+        <section className="card summary-card" aria-labelledby="planning-assessment-heading">
+          <h2 id="planning-assessment-heading" className="card-heading-small">
+            Presentation plan
+          </h2>
+          <p>{feedback.planningAssessment}</p>
+        </section>
+
+        <section className="card summary-card" aria-labelledby="execution-assessment-heading">
+          <h2 id="execution-assessment-heading" className="card-heading-small">
+            Presentation execution
+          </h2>
+          <p>{feedback.executionAssessment}</p>
         </section>
 
         <section className="card summary-card" aria-labelledby="strengths-heading">

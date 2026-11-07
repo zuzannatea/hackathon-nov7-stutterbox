@@ -22,10 +22,13 @@ export interface AnalysisRequest {
   transcript: string;
   statistics: SpeechStatistics;
   inspiration?: string;
+  intendedSpeech?: string;
 }
 
 export interface Feedback {
   overallAssessment: string;
+  planningAssessment: string;
+  executionAssessment: string;
   strengths: Array<{ title: string; explanation: string; evidence?: string }>;
   improvements: Array<{
     title: string;
@@ -42,12 +45,25 @@ export interface Feedback {
   suggestedRewrite?: string;
 }
 
-export type AnalyseSpeech = (input: AnalysisRequest) => Promise<Feedback>;
+/** Internal AI result; the route returns formattedTranscript beside Feedback. */
+export interface AnalysisResult extends Feedback {
+  formattedTranscript: string;
+}
+
+export interface AnalysisResponse {
+  transcript: string;
+  formattedTranscript: string;
+  statistics: SpeechStatistics;
+  feedback: Feedback;
+}
+
+export type AnalyseSpeech = (input: AnalysisRequest) => Promise<AnalysisResult>;
 
 export const ANALYSIS_TIMEOUT_MS = 30_000;
 
 const MAX_TRANSCRIPT_LENGTH = 20_000;
 const MAX_INSPIRATION_LENGTH = 5_000;
+const MAX_INTENDED_SPEECH_LENGTH = 20_000;
 const MAX_KEY_POINTS = 20;
 const MAX_TEXT_FIELD_LENGTH = 500;
 
@@ -134,6 +150,13 @@ export function createAnalyzeRouter(
       sendError(res, 400, `inspiration must be text of ${MAX_INSPIRATION_LENGTH} characters or fewer.`);
       return;
     }
+    if (
+      body.intendedSpeech !== undefined &&
+      (typeof body.intendedSpeech !== "string" || body.intendedSpeech.length > MAX_INTENDED_SPEECH_LENGTH)
+    ) {
+      sendError(res, 400, `intendedSpeech must be text of ${MAX_INTENDED_SPEECH_LENGTH} characters or fewer.`);
+      return;
+    }
 
     const statistics = calculateSpeechStatistics(body.transcript, body.durationSeconds);
     if (!analyseSpeech) {
@@ -142,16 +165,18 @@ export function createAnalyzeRouter(
     }
 
     try {
-      const feedback = await withTimeout(
+      const analysis = await withTimeout(
         analyseSpeech({
           presentation: body.presentation,
           transcript: body.transcript,
           statistics,
           ...(typeof body.inspiration === "string" ? { inspiration: body.inspiration } : {}),
+          ...(typeof body.intendedSpeech === "string" ? { intendedSpeech: body.intendedSpeech } : {}),
         }),
         analysisTimeoutMs,
       );
-      res.json({ transcript: body.transcript, statistics, feedback });
+      const { formattedTranscript, ...feedback } = analysis;
+      res.json({ transcript: body.transcript, formattedTranscript, statistics, feedback });
     } catch (error) {
       if (error instanceof AnalysisTimeoutError) {
         sendError(res, 504, "Speech analysis timed out. Please try again.");

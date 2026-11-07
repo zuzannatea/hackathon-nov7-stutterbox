@@ -3,13 +3,12 @@ export interface SpeechStatistics {
   wordCount: number;
   wordsPerMinute: number;
   fillerWords: Record<string, number>;
-  sentenceCount: number;
 }
 
 /**
- * Counts whitespace-separated tokens as words. Sentence boundaries are
- * detected by runs of ., !, or ?; filler counts use only clear disfluencies
- * so context-dependent words such as "like" and "so" are not misclassified.
+ * Counts whitespace-separated tokens as words. Filler counts use only clear
+ * disfluencies so context-dependent words such as "like" and "so" are not
+ * misclassified.
  */
 export function calculateSpeechStatistics(
   transcript: string,
@@ -25,8 +24,6 @@ export function calculateSpeechStatistics(
     fillerWords[filler] = (fillerWords[filler] ?? 0) + 1;
   }
 
-  const sentenceCount = (transcript.match(/[.!?]+/g) ?? []).length;
-
   return {
     durationSeconds: normalizedDuration,
     wordCount: words.length,
@@ -35,6 +32,5 @@ export function calculateSpeechStatistics(
         ? words.length / (normalizedDuration / 60)
         : 0,
     fillerWords,
-    sentenceCount,
   };
 }

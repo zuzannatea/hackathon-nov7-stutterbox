@@ -125,10 +125,11 @@ function App() {
     setIsSubmitting(true);
     setAnalysisError(null);
 
-    const request: Pick<AnalyzeRequestBody, "presentation" | "transcript" | "durationSeconds"> = {
+    const request: Pick<AnalyzeRequestBody, "presentation" | "transcript" | "durationSeconds" | "intendedSpeech"> = {
       presentation,
       transcript: attempt.transcript,
       durationSeconds: attempt.durationSeconds,
+      ...(speech.text.trim() ? { intendedSpeech: speech.text } : {}),
     };
 
     try {

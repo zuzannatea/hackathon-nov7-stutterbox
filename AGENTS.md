@@ -40,9 +40,9 @@ Member 2 owns the HTTP route and calls Member 3's agreed service interface. Memb
 
 ## 5. Statistics status and limitations
 
-`server/services/statistics.ts` implements `SpeechStatistics` and `calculateSpeechStatistics(transcript, durationSeconds)`. It has passed the backend TypeScript build and has been reviewed. Word count uses trimmed whitespace-separated tokens; sentence count uses punctuation; filler words are counted case-insensitively from `um`, `uh`, `erm`, and `er`; invalid, zero, or negative durations normalize to zero. WPM uses word count divided by duration in minutes.
+`server/services/statistics.ts` implements `SpeechStatistics` and `calculateSpeechStatistics(transcript, durationSeconds)`. It has passed the backend TypeScript build and has been reviewed. Word count uses trimmed whitespace-separated tokens; filler words are counted case-insensitively from `um`, `uh`, `erm`, and `er`; invalid, zero, or negative durations normalize to zero. WPM uses word count divided by duration in minutes.
 
-The team accepted these MVP limitations: sentence counts can be affected by abbreviations, decimals, and punctuation patterns; literal uses of filler words may be counted; very short positive durations can produce unusually high WPM; and WPM is not rounded. Do not change these rules merely to improve sophistication. Change the service only to fix a functional bug, explaining it first.
+The team accepted these MVP limitations: literal uses of filler words may be counted; very short positive durations can produce unusually high WPM; and WPM is not rounded. Do not change these rules merely to improve sophistication. Change the service only to fix a functional bug, explaining it first.
 
 The JSON `POST /api/analyze` route is implemented with request validation and server-side statistics. Member 3's callable analysis service is not yet in the repository, so valid requests currently receive `503 Service Unavailable`; completing that service integration is the next backend task.
 

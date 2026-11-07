@@ -61,7 +61,6 @@ flow over a large feature set.
     -   word count
     -   words per minute
     -   selected filler-word counts
-    -   sentence count, if practical
 -   AI analysis comparing the intended content with the transcript.
 -   Results screen showing:
     -   concise overall assessment
@@ -220,6 +219,7 @@ Request: `application/json`
 -   `presentation`: `Presentation` object
 -   `durationSeconds`: elapsed presentation duration measured by the frontend
 -   `inspiration`: optional text
+-   `intendedSpeech`: optional prepared script, at most 20,000 characters
 
 The backend validates this payload, caps the JSON body at 1 MB and the
 transcript at 20,000 characters, and calculates statistics itself. The
@@ -253,20 +253,15 @@ interface SpeechStatistics {
   wordCount: number;
   wordsPerMinute: number;
   fillerWords: Record<string, number>;
-  sentenceCount: number;
 }
 ```
 
 The statistics service is implemented in `server/services/statistics.ts`.
-Its MVP rules count
-whitespace-separated words, punctuation-based sentences, and the
-case-insensitive fillers `um`, `uh`, `erm`, and `er`. Invalid or
+Its MVP rules count whitespace-separated words and the case-insensitive
+fillers `um`, `uh`, `erm`, and `er`. Invalid or
 non-positive durations normalize to zero. The team reviewed and accepted
-these limitations: abbreviations, decimals, and punctuation patterns can
-affect sentence counts; literal uses of filler terms may be counted;
-very short durations can produce unusually high WPM; and WPM is not
-rounded. Do not expand sentence segmentation without a demonstrated MVP
-need.
+these limitations: literal uses of filler terms may be counted; very short
+durations can produce unusually high WPM; and WPM is not rounded.
 
 Suggested internal analysis input:
 
@@ -276,13 +271,15 @@ interface AnalysisRequest {
   transcript: string;
   statistics: SpeechStatistics;
   inspiration?: string;
+  intendedSpeech?: string;
 }
 ```
 
 The backend route exports the integration boundary
-`AnalyseSpeech = (input: AnalysisRequest) => Promise<Feedback>`, where
-`Feedback` is the response's `feedback` object below. Member 3's
-`analyseSpeech` implementation matches this contract. Typed service errors
+`AnalyseSpeech = (input: AnalysisRequest) => Promise<AnalysisResult>`, where
+`AnalysisResult` contains the `Feedback` fields below plus a display-only
+`formattedTranscript`. The route returns that transcript separately from
+`feedback`. Typed service errors
 are mapped by the route to safe HTTP errors; the route does not implement
 Claude calls or substitute placeholder feedback.
 
@@ -291,9 +288,12 @@ Successful response shape:
 ``` ts
 interface AnalysisResponse {
   transcript: string;
+  formattedTranscript: string;
   statistics: SpeechStatistics;
   feedback: {
     overallAssessment: string;
+    planningAssessment: string;
+    executionAssessment: string;
     strengths: Array<{
       title: string;
       explanation: string;
@@ -315,6 +315,14 @@ interface AnalysisResponse {
   };
 }
 ```
+
+`planningAssessment` evaluates the plan itself. `executionAssessment`
+evaluates the transcript and statistics against that plan, distinguishing
+observable text evidence from conclusions the transcript cannot support.
+The service must not infer vocal or emotional characteristics from text.
+The original `transcript` is used for statistics, analysis and evidence;
+`formattedTranscript` adds punctuation and capitalisation for display only
+and must preserve the original words in their original order.
 
 Treat this as the target contract, not a reason to over-engineer. If the
 team changes the contract, update the frontend, backend, and AI
