@@ -300,7 +300,13 @@ function App() {
                   <h1>Your feedback</h1>
                   <p>Review your speech statistics and suggestions for your next practice.</p>
                 </div>
-                <FeedbackStep analysis={analysis} onBack={() => setScreen("practise")} />
+                {presentation && (
+                  <FeedbackStep
+                    analysis={analysis}
+                    presentation={presentation}
+                    onBack={() => setScreen("practise")}
+                  />
+                )}
               </>
             )}
           </main>
