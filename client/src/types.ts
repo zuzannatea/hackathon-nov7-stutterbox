@@ -21,12 +21,13 @@ export interface SpeechStatistics {
   wordCount: number;
   wordsPerMinute: number;
   fillerWords: Record<string, number>;
-  sentenceCount: number;
 }
 
 /** AI feedback returned by the backend. */
 export interface Feedback {
   overallAssessment: string;
+  planningAssessment: string;
+  executionAssessment: string;
   strengths: Array<{ title: string; explanation: string; evidence?: string }>;
   improvements: Array<{
     title: string;
@@ -49,11 +50,13 @@ export interface AnalyzeRequestBody {
   presentation: Presentation;
   durationSeconds: number;
   inspiration?: string;
+  intendedSpeech?: string;
 }
 
 /** Successful response from POST /api/analyze. */
 export interface AnalysisResponse {
   transcript: string;
+  formattedTranscript: string;
   statistics: SpeechStatistics;
   feedback: Feedback;
 }
@@ -64,9 +67,8 @@ export interface AnalysisResponse {
 // ---------------------------------------------------------------------------
 
 /**
- * The user's written speech from Step 1. Used only as a reference while
- * practising; it is NOT sent to the backend or part of `Presentation`.
- * TODO: the team may add a "script" field to the API contract later.
+ * The user's written speech from Step 1. Used as a practice reference and
+ * sent separately as optional `intendedSpeech`; it is not part of `Presentation`.
  */
 export interface SpeechDraft {
   title: string;
@@ -74,10 +76,44 @@ export interface SpeechDraft {
   /** The last uploaded file (for the file card), or null. */
   file: { name: string; sizeBytes: number } | null;
   /**
-   * Where the speech came from: an uploaded document, a generated speech, or
-   * null (typed/pasted, or nothing yet). Upload and Generate can't both be active.
+   * Where the speech came from: an uploaded speech document, an uploaded CSV
+   * data file (speech generated from it), or null (typed/pasted, or nothing yet).
+   * Only one of the two uploads can be active at a time.
    */
-  source: "upload" | "generated" | null;
+  source: "document" | "csv" | null;
+}
+
+/** One CSV cell after parsing (numbers and true/false are converted). */
+export type CsvCell = string | number | boolean | null;
+
+/** Summary of one CSV column, calculated over every row of the file. */
+export interface CsvColumnSummary {
+  column: string;
+  type: "number" | "text" | "empty";
+  count: number;
+  min?: number;
+  max?: number;
+  mean?: number;
+  topValues?: Array<{ value: string; count: number }>;
+}
+
+/** Body of POST /api/generate-speech-from-csv (a sample + summaries, not the whole file). */
+export interface CsvSpeechRequest {
+  fileName: string;
+  rowCount: number;
+  columns: string[];
+  rows: CsvCell[][];
+  summaries: CsvColumnSummary[];
+}
+
+/** An uploaded CSV file: what the preview shows and what we send to the server. */
+export interface CsvData {
+  fileName: string;
+  sizeBytes: number;
+  rowCount: number;
+  columnCount: number;
+  previewRows: CsvCell[][];
+  request: CsvSpeechRequest;
 }
 
 /** One finished practice attempt from Step 3. */

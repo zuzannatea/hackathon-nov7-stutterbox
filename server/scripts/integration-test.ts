@@ -147,6 +147,15 @@ async function main(): Promise<void> {
   );
 
   await checkResponse(
+    "intendedSpeech over 20,000 characters is rejected",
+    400,
+    () => sendJson({ ...validRequest, intendedSpeech: "x".repeat(20_001) }),
+    (body) =>
+      typeof body === "object" && body !== null && "error" in body &&
+      body.error === "intendedSpeech must be text of 20000 characters or fewer.",
+  );
+
+  await checkResponse(
     "Transcript over 20,000 characters is rejected",
     413,
     () => sendJson({ ...validRequest, transcript: "Long speech. ".repeat(1_600) }),
@@ -201,10 +210,11 @@ async function main(): Promise<void> {
 
       return (
         body.transcript === validRequest.transcript &&
+        typeof body.formattedTranscript === "string" &&
         body.statistics.durationSeconds === 35 &&
         body.statistics.wordCount === 2 &&
         body.statistics.wordsPerMinute === 2 / (35 / 60) &&
-        body.statistics.sentenceCount === 1 &&
+        body.formattedTranscript === validRequest.transcript &&
         isRecord(body.statistics.fillerWords) &&
         body.feedback.overallAssessment ===
           "We couldn't hear enough speech to give you feedback on this attempt. Only a few words were picked up, so there is nothing meaningful to review yet." &&
@@ -214,6 +224,18 @@ async function main(): Promise<void> {
         Array.isArray(body.feedback.nextSteps)
       );
     },
+  );
+
+  await checkResponse(
+    "Optional intendedSpeech is accepted",
+    200,
+    () => sendJson({ ...validRequest, intendedSpeech: "A short reference speech." }),
+    (body) =>
+      isRecord(body) && body.transcript === validRequest.transcript &&
+        typeof body.formattedTranscript === "string" &&
+        isRecord(body.statistics) && isRecord(body.feedback) &&
+        typeof body.feedback.planningAssessment === "string" &&
+        typeof body.feedback.executionAssessment === "string",
   );
 
   await checkHealth("Health endpoint responds after all integration requests");

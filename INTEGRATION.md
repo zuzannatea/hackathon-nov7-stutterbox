@@ -162,13 +162,15 @@ Request JSON:
   },
   "transcript": "Hello team. Our goal is to improve access.",
   "durationSeconds": 30,
-  "inspiration": "Optional reference text"
+  "inspiration": "Optional reference text",
+  "intendedSpeech": "Optional prepared script"
 }
 ```
 
-`inspiration` is optional. Do not send audio or client-calculated
-statistics. The backend calculates statistics from `transcript` and
-`durationSeconds`.
+`inspiration` and `intendedSpeech` are optional. Omit an empty prepared
+script; `intendedSpeech` is limited to 20,000 characters. Do not send audio
+or client-calculated statistics. The backend calculates statistics from
+`transcript` and `durationSeconds`.
 
 Validation constraints in the current route:
 
@@ -189,15 +191,17 @@ yet been verified):
 ```json
 {
   "transcript": "Hello team. Our goal is to improve access.",
+  "formattedTranscript": "Hello, team. Our goal is to improve access.",
   "statistics": {
     "durationSeconds": 30,
     "wordCount": 8,
     "wordsPerMinute": 16,
-    "fillerWords": {},
-    "sentenceCount": 2
+    "fillerWords": {}
   },
   "feedback": {
     "overallAssessment": "The speech states a clear goal and stays concise.",
+    "planningAssessment": "The title, audience, purpose and key point form a focused plan.",
+    "executionAssessment": "The transcript states the goal; the actual delivery cannot be judged from text.",
     "strengths": [
       {
         "title": "Clear purpose",
@@ -228,9 +232,11 @@ yet been verified):
 }
 ```
 
-The statistics example follows the current whitespace-token word count and
-punctuation sentence count. WPM is not rounded. Filler counts and sentence
-counts have the documented transcript-based limitations in `PROJECT.md`.
+The backend calculates statistics from the original `transcript` and uses
+that original for analysis and evidence validation. `formattedTranscript`
+is display-only and must preserve every word in order. WPM is not rounded;
+filler counts have the documented transcript-based limitations in
+`PROJECT.md`.
 
 The results UI should handle each HTTP error below and display
 `response.error` when present rather than assuming every response is a
@@ -241,8 +247,11 @@ success object.
 The backend exports these types from `server/routes/analyze.ts`:
 
 ```ts
-export type AnalyseSpeech = (input: AnalysisRequest) => Promise<Feedback>;
+export type AnalyseSpeech = (input: AnalysisRequest) => Promise<AnalysisResult>;
 ```
+
+`AnalysisResult` contains all `Feedback` fields plus `formattedTranscript`.
+The route moves `formattedTranscript` to the top level of the HTTP response.
 
 `AnalysisRequest` contains:
 
@@ -252,6 +261,7 @@ interface AnalysisRequest {
   transcript: string;
   statistics: SpeechStatistics;
   inspiration?: string;
+  intendedSpeech?: string;
 }
 ```
 
@@ -264,13 +274,13 @@ interface SpeechStatistics {
   wordCount: number;
   wordsPerMinute: number;
   fillerWords: Record<string, number>;
-  sentenceCount: number;
 }
 ```
 
 The function must return the `Feedback` shape used in the successful
-response above: `overallAssessment`, `strengths`, `improvements`,
-`keyPointCoverage`, `nextSteps`, and optional `suggestedRewrite`. Coverage
+response above: `overallAssessment`, `planningAssessment`,
+`executionAssessment`, `strengths`, `improvements`, `keyPointCoverage`,
+`nextSteps`, and optional `suggestedRewrite`. Coverage
 statuses are exactly `covered`, `partial`, or `missing`. Member 3 owns
 Claude calls, prompt design, and runtime validation of Claude's output.
 `server/services/analysis.ts` exports `analyseSpeech` and uses
@@ -366,7 +376,7 @@ the deterministic test suite.
 ### Member 2 + Member 3
 
 - [x] Confirm Member 3's exported function satisfies
-  `AnalyseSpeech = (input: AnalysisRequest) => Promise<Feedback>`.
+  `AnalyseSpeech = (input: AnalysisRequest) => Promise<AnalysisResult>`.
 - [x] Pass the real function to `createAnalyzeRouter`; the deterministic
   HTTP test exercises the short-transcript response without calling Claude.
 - [x] Verify the route passes presentation, transcript, and server-calculated
@@ -391,18 +401,24 @@ the deterministic test suite.
 Do not describe the complete app as integrated until the real frontend
 request/results flow and Member 3's Claude service both pass these checks.
 
-## Speech generation (Step 1 "Generate a speech")
+## Speech generation from CSV data (Step 1 "Upload data (.csv)")
 
 Added by Member 1 with the team's agreement; route and prompt owners should review.
+It replaces the short-lived `POST /api/generate-speech` (free-text description), which was removed.
 
-- Route: `server/routes/generateSpeech.ts`, mounted at `POST /api/generate-speech`.
-- Service: `server/services/speechGeneration.ts` (Claude call and system prompt). It uses
+- Route: `server/routes/generateSpeechFromCsv.ts`, mounted at `POST /api/generate-speech-from-csv`.
+- Service: `server/services/csvSpeech.ts` (Claude call and system prompt). It uses
   `ANTHROPIC_API_KEY` and its own model setting `ANTHROPIC_SPEECH_MODEL`
   (default `claude-sonnet-5-5`, separate from the analysis model), `effort: "low"`,
   no retries, and the server-side refusal fallback (`fallbacks: "default"`).
-- Request: `{ "brief": string }`, trimmed, 1–3,000 characters.
+- The browser parses the CSV (papaparse, max ~1 MB) and sends a sample, not the file:
+  `{ fileName, rowCount, columns: string[], rows: (string|number|boolean|null)[][],
+  summaries: [{ column, type: "number"|"text"|"empty", count, min?, max?, mean?,
+  topValues?: [{ value, count }] }] }`. `rows` holds at most 200 rows; summaries cover
+  every row. The server re-validates all limits (100 columns, 500-character cells,
+  10 top values) and rebuilds the CSV text itself.
 - Response: `{ "speech": string }`, plain text with paragraphs separated by blank lines.
-- Errors (`{ "error": string }`): `400` invalid or too long, `422` the model declined,
+- Errors (`{ "error": string }`): `400` invalid data, `422` the model declined,
   `502` provider failure, `503` no API key configured, `504` over the 45-second deadline.
 - The generated speech is frontend-only after this call: it becomes the Step 1 speech
   text, exactly like an uploaded document. It is not added to `/api/analyze`.

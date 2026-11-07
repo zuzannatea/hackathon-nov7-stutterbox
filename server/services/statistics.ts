@@ -3,7 +3,6 @@ export interface SpeechStatistics {
   wordCount: number;
   wordsPerMinute: number;
   fillerWords: Record<string, number>;
-  sentenceCount: number;
 }
 
 // Two-word filler phrases, counted before single words so no word counts twice.
@@ -68,9 +67,9 @@ function countFillerWords(transcript: string): Record<string, number> {
 }
 
 /**
- * Counts whitespace-separated tokens as words. Sentence boundaries are
- * detected by runs of ., !, or ?. Filler counts are case-insensitive,
- * whole-word estimates; see countFillerWords for the list and exclusions.
+ * Counts whitespace-separated tokens as words. Filler counts are
+ * case-insensitive whole-word estimates; see countFillerWords for the
+ * selected phrases, words, and context exclusions.
  */
 export function calculateSpeechStatistics(
   transcript: string,
@@ -81,8 +80,6 @@ export function calculateSpeechStatistics(
   const normalizedDuration = validDuration ? durationSeconds : 0;
   const fillerWords = countFillerWords(transcript);
 
-  const sentenceCount = (transcript.match(/[.!?]+/g) ?? []).length;
-
   return {
     durationSeconds: normalizedDuration,
     wordCount: words.length,
@@ -91,6 +88,5 @@ export function calculateSpeechStatistics(
         ? words.length / (normalizedDuration / 60)
         : 0,
     fillerWords,
-    sentenceCount,
   };
 }

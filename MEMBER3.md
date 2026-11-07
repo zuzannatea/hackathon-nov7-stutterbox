@@ -67,7 +67,7 @@ Member 2 has implemented the route with the following integration boundary:
 ```ts
 type AnalyseSpeech = (
   input: AnalysisRequest
-) => Promise<Feedback>;
+) => Promise<AnalysisResult>;
 ```
 
 Your service must provide a function compatible with this type.
@@ -84,6 +84,7 @@ interface AnalysisRequest {
   transcript: string;
   statistics: SpeechStatistics;
   inspiration?: string;
+  intendedSpeech?: string;
 }
 ```
 
@@ -110,7 +111,15 @@ interface SpeechStatistics {
   wordCount: number;
   wordsPerMinute: number;
   fillerWords: Record<string, number>;
-  sentenceCount: number;
+}
+```
+
+`AnalysisResult` extends the feedback fields with `formattedTranscript`,
+which the route returns separately at the top level of its HTTP response.
+
+```ts
+interface AnalysisResult extends Feedback {
+  formattedTranscript: string;
 }
 ```
 
@@ -134,11 +143,14 @@ Use all relevant presentation context when evaluating the transcript. For exampl
 
 ## 5. Required output: Feedback
 
-Your service must return a `Feedback` object with the following structure:
+Your service returns an `AnalysisResult`: the following `Feedback` fields
+plus the required `formattedTranscript` field described above.
 
 ```ts
 interface Feedback {
   overallAssessment: string;
+  planningAssessment: string;
+  executionAssessment: string;
 
   strengths: Array<{
     title: string;
@@ -164,6 +176,13 @@ interface Feedback {
   suggestedRewrite?: string;
 }
 ```
+
+`planningAssessment` evaluates the coherence and suitability of the plan,
+without claiming the speaker delivered it. `executionAssessment` evaluates
+the transcript and statistics against the plan, noting when text alone
+cannot support a conclusion. When `intendedSpeech` is present, compare its
+meaning with the transcript for meaningful omissions, additions, and
+deviations; accept paraphrasing and quote evidence only from the transcript.
 
 ### Expected meaning of each field
 
@@ -238,7 +257,6 @@ Do not claim to have measured these characteristics.
 The statistics are also approximations. In particular:
 - Web Speech API transcription may omit or normalise filler words.
 - Filler-word counts are based on the transcript received by the backend.
-- Sentence counting has known limitations around abbreviations and decimal numbers.
 
 Do not present these statistics as perfectly accurate measurements.
 
@@ -279,7 +297,7 @@ Member 2 has already implemented:
 - The response structure.
 
 The AI service is present at `server/services/analysis.ts` and exports
-`analyseSpeech(request: AnalysisRequest): Promise<Feedback>`. The backend entry
+`analyseSpeech(request: AnalysisRequest): Promise<AnalysisResult>`. The backend entry
 point passes it to the Express route.
 
 The service returns normal feedback for transcripts under five words without

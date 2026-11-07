@@ -19,8 +19,10 @@ import type {
   AnalyzeRequestBody,
   PractiseAttempt,
   Presentation,
+  CsvData,
   SpeechDraft,
 } from "./types";
+import { requestSpeechFromCsv } from "./services/csvSpeechApi";
 import { celebrate } from "./utils/celebrate";
 import { createFormDraft, type FormDraft } from "./utils/formDraft";
 
@@ -61,6 +63,11 @@ function App() {
   // Step 1 speech: frontend-only reference text. It is NOT sent to the backend.
   // TODO: the team may add a "script" field to the API contract later.
   const [speech, setSpeech] = useState<SpeechDraft>(EMPTY_SPEECH);
+  // Step 1 CSV data file (alternative to a speech document). Our server turns it into a speech.
+  const [csvData, setCsvData] = useState<CsvData | null>(null);
+  const [isGeneratingFromCsv, setIsGeneratingFromCsv] = useState(false);
+  const [csvGenerateError, setCsvGenerateError] = useState<string | null>(null);
+  const csvGeneratingRef = useRef(false); // blocks double submissions immediately
   // Step 2: what's typed in the form (even if not saved yet)...
   const [aimsDraft, setAimsDraft] = useState<FormDraft>(() => createFormDraft(null));
   // ...and the saved, validated aims.
@@ -130,6 +137,37 @@ function App() {
     setScreen("aims");
   }
 
+  function handleCsvDataChange(data: CsvData | null) {
+    setCsvData(data);
+    setCsvGenerateError(null);
+  }
+
+  /**
+   * Turns the uploaded CSV into a speech (server side) and puts it into the
+   * same speech state an uploaded document uses, so every later step treats it
+   * the same way. A new speech also starts a fresh practice run.
+   */
+  async function generateSpeechFromCsv(): Promise<boolean> {
+    if (!csvData || csvGeneratingRef.current) return false;
+    csvGeneratingRef.current = true;
+    setIsGeneratingFromCsv(true);
+    setCsvGenerateError(null);
+    try {
+      const text = await requestSpeechFromCsv(csvData.request);
+      setSpeech((current) => ({ ...current, text, file: null, source: "csv" }));
+      setAttempt(null);
+      setAnalysis(null);
+      setAnalysisError(null);
+      return true;
+    } catch (error) {
+      setCsvGenerateError(error instanceof Error ? error.message : "Something went wrong. Please try again.");
+      return false;
+    } finally {
+      csvGeneratingRef.current = false;
+      setIsGeneratingFromCsv(false);
+    }
+  }
+
   function handleAimsSubmit(newPresentation: Presentation) {
     setPresentation(newPresentation);
     setAttempt(null);
@@ -159,10 +197,11 @@ function App() {
     setIsSubmitting(true);
     setAnalysisError(null);
 
-    const request: Pick<AnalyzeRequestBody, "presentation" | "transcript" | "durationSeconds"> = {
+    const request: Pick<AnalyzeRequestBody, "presentation" | "transcript" | "durationSeconds" | "intendedSpeech"> = {
       presentation,
       transcript: attempt.transcript,
       durationSeconds: attempt.durationSeconds,
+      ...(speech.text.trim() ? { intendedSpeech: speech.text } : {}),
     };
 
     try {
@@ -215,11 +254,16 @@ function App() {
                 <StepProgress currentStep={1} />
                 <div className="page-heading">
                   <h1>Add your speech</h1>
-                  <p>Type or paste it below, upload a document, or describe it and we'll write one. You can edit it here at any time.</p>
+                  <p>Type or paste it below, upload a document, or upload a CSV and we'll turn your data into a speech. You can edit it here at any time.</p>
                 </div>
                 <SpeechStep
                   speech={speech}
                   onSpeechChange={setSpeech}
+                  csvData={csvData}
+                  onCsvDataChange={handleCsvDataChange}
+                  onGenerateFromCsv={generateSpeechFromCsv}
+                  isGeneratingFromCsv={isGeneratingFromCsv}
+                  csvGenerateError={csvGenerateError}
                   onContinue={goToAims}
                   onSkip={goToAims}
                 />
@@ -288,6 +332,10 @@ function App() {
                   isSubmitting={isSubmitting}
                   analysisError={analysisError}
                   onEditSpeech={() => setScreen("speech")}
+                  generatedFromFile={speech.source === "csv" && csvData ? csvData.fileName : null}
+                  onRegenerateSpeech={() => void generateSpeechFromCsv()}
+                  isRegenerating={isGeneratingFromCsv}
+                  regenerateError={csvGenerateError}
                 />
               </>
             )}

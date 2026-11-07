@@ -11,8 +11,8 @@ import {
 import {
   createAnalyzeRouter,
   type AnalyseSpeech,
+  type AnalysisResult,
   type AnalysisRequest,
-  type Feedback,
 } from "./analyze.js";
 
 const presentation = {
@@ -26,12 +26,15 @@ const presentation = {
 
 const requestBody = {
   presentation,
-  transcript: "Um, hello. Let's start!",
+  transcript: "um hello lets start",
   durationSeconds: 30,
 };
 
-const feedback: Feedback = {
+const feedback: AnalysisResult = {
+  formattedTranscript: "Um, hello, let's start.",
   overallAssessment: "A clear update.",
+  planningAssessment: "The plan is clear for the intended audience.",
+  executionAssessment: "The transcript explains the key point.",
   strengths: [],
   improvements: [],
   keyPointCoverage: [],
@@ -85,19 +88,79 @@ test("returns feedback and unchanged server-calculated statistics before timeout
 
     assert.equal(response.status, 200);
     assert.equal(result.transcript, requestBody.transcript);
-    assert.deepEqual(result.feedback, feedback);
+    assert.equal(result.formattedTranscript, feedback.formattedTranscript);
+    assert.equal(result.feedback.formattedTranscript, undefined);
+    assert.deepEqual(result.feedback, {
+      overallAssessment: feedback.overallAssessment,
+      planningAssessment: feedback.planningAssessment,
+      executionAssessment: feedback.executionAssessment,
+      strengths: feedback.strengths,
+      improvements: feedback.improvements,
+      keyPointCoverage: feedback.keyPointCoverage,
+      nextSteps: feedback.nextSteps,
+    });
     assert.deepEqual(result.statistics, {
       durationSeconds: 30,
       wordCount: 4,
       wordsPerMinute: 8,
       fillerWords: { um: 1 },
-      sentenceCount: 2,
     });
     assert.deepEqual(receivedInput, {
       presentation,
       transcript: requestBody.transcript,
       statistics: result.statistics,
     });
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("passes optional intendedSpeech to the AI service", async () => {
+  let receivedInput: AnalysisRequest | undefined;
+  const analyseSpeech: AnalyseSpeech = async (input) => {
+    receivedInput = input;
+    return feedback;
+  };
+  const { server, baseUrl } = await startTestServer(analyseSpeech, 1_000);
+  const intendedSpeech = "The script I planned to deliver.";
+
+  try {
+    const response = await fetch(`${baseUrl}/api/analyze`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...requestBody, intendedSpeech }),
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(receivedInput?.intendedSpeech, intendedSpeech);
+  } finally {
+    await stopTestServer(server);
+  }
+});
+
+test("rejects invalid intendedSpeech values with 400 before calling AI", async () => {
+  let callCount = 0;
+  const analyseSpeech: AnalyseSpeech = async () => {
+    callCount += 1;
+    return feedback;
+  };
+  const { server, baseUrl } = await startTestServer(analyseSpeech, 1_000);
+
+  try {
+    for (const intendedSpeech of [42, "x".repeat(20_001)]) {
+      const response = await fetch(`${baseUrl}/api/analyze`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...requestBody, intendedSpeech }),
+      });
+
+      assert.equal(response.status, 400);
+      assert.deepEqual(await response.json(), {
+        error: "intendedSpeech must be text of 20000 characters or fewer.",
+      });
+    }
+
+    assert.equal(callCount, 0);
   } finally {
     await stopTestServer(server);
   }

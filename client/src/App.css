@@ -1220,7 +1220,12 @@ button[aria-disabled="true"] {
   }
 }
 
-/* ---------- Step 1: "Generate a speech" ---------- */
+/* ---------- Step 1: upload a speech OR upload data (.csv) ---------- */
+
+.drop-cell > .card-heading-small,
+.csv-section > .card-heading-small {
+  margin: 0;
+}
 
 .or-divider {
   margin: 1.25rem 0 0.75rem;
@@ -1230,36 +1235,14 @@ button[aria-disabled="true"] {
   color: var(--ink-muted);
 }
 
-.generate-section {
+.csv-section {
   display: grid;
-  gap: 0.6rem;
-  padding: 1.1rem;
-  border: 1px solid var(--sage-100);
-  border-radius: 14px;
-  background: #ffffff;
+  gap: 0.75rem;
+  min-width: 0;
 }
 
-.generate-section .card-heading-small {
-  margin: 0;
-}
-
-.generate-section > .button-secondary {
-  justify-self: start;
-}
-
-.brief-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.brief-meta .hint {
-  margin: 0;
-}
-
-.brief-count {
-  flex-shrink: 0;
-  font-variant-numeric: tabular-nums;
+.csv-intro {
+  margin: -0.4rem 0 0;
 }
 
 .locked-note {
@@ -1270,43 +1253,90 @@ button[aria-disabled="true"] {
   color: var(--sage-900);
 }
 
-.generate-error {
-  margin: 0;
-}
-
-.generated-preview {
+.csv-card {
   display: grid;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-  padding-top: 0.9rem;
-  border-top: 1px solid var(--sage-100);
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.9rem;
+  border: 1px solid var(--sage-100);
+  border-radius: 14px;
+  background: #ffffff;
 }
 
-.generated-preview-label {
-  font-size: 0.85rem;
-  font-weight: 700;
-}
-
-.generated-preview .hint {
+.csv-card .hint {
   margin: 0;
 }
 
-.generated-actions {
+.csv-card-top {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* Wide tables scroll sideways inside the card, never the whole page */
+.table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--sage-100);
+  border-radius: 10px;
+}
+
+.csv-preview {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.csv-preview caption {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--ink-muted);
+  background: var(--sage-50);
+}
+
+.csv-preview th,
+.csv-preview td {
+  padding: 0.4rem 0.75rem;
+  border-top: 1px solid var(--sage-100);
+  text-align: left;
+  white-space: nowrap;
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.csv-preview th {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.csv-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
 }
 
-@media (max-width: 600px) {
-  .brief-meta {
-    flex-direction: column;
-    gap: 0.2rem;
-  }
+.csv-generate-error {
+  margin: 0;
+}
 
-  .generated-actions > button,
-  .generate-section > .button-secondary {
+/* Practise: "Generated from data.csv · Regenerate" */
+.generated-from {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.generated-from .hint {
+  margin: 0;
+}
+
+@media (max-width: 600px) {
+  .csv-actions > button {
     flex: 1 1 100%;
-    justify-self: stretch;
   }
 }
 

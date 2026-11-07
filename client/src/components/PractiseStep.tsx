@@ -34,6 +34,12 @@ interface PractiseStepProps {
   analysisError: AnalysisApiErrorInfo | null;
   /** Go back to Step 1 (from the "Add your speech" hint). */
   onEditSpeech: () => void;
+  /** Name of the CSV file the speech was generated from, or null. */
+  generatedFromFile: string | null;
+  /** Writes a new speech from the same CSV (replaces the speech, resets the run). */
+  onRegenerateSpeech: () => void;
+  isRegenerating: boolean;
+  regenerateError: string | null;
 }
 
 export default function PractiseStep({
@@ -46,6 +52,10 @@ export default function PractiseStep({
   isSubmitting,
   analysisError,
   onEditSpeech,
+  generatedFromFile,
+  onRegenerateSpeech,
+  isRegenerating,
+  regenerateError,
 }: PractiseStepProps) {
   const recorder = useSpeechRecorder({
     language: RECOGNITION_LANGUAGE,
@@ -73,6 +83,14 @@ export default function PractiseStep({
   useEffect(() => {
     if (attempt) resultHeadingRef.current?.focus();
   }, [attempt]);
+
+  /** New speech from the same data: clear this run first, then regenerate. */
+  function regenerateSpeech() {
+    if (isRegenerating || recorder.isRecording) return;
+    recorder.reset();
+    setShowTypedForm(false);
+    onRegenerateSpeech();
+  }
 
   function recordAgain() {
     onAttemptChange(null);
@@ -110,6 +128,34 @@ export default function PractiseStep({
 
   return (
     <>
+      {/* ---------- Speech generated from a CSV file ---------- */}
+      {generatedFromFile && (
+        <div className="generated-from">
+          <span className="chip">Generated from {generatedFromFile}</span>
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={regenerateSpeech}
+            disabled={isRegenerating || recorder.isRecording || isSubmitting}
+            aria-describedby="regenerate-hint"
+          >
+            <RotateCcw size={16} aria-hidden="true" />
+            {isRegenerating ? "Turning your data into a speech…" : "Regenerate"}
+          </button>
+          <p id="regenerate-hint" className="hint">
+            Replaces your speech and starts a new practice run.
+          </p>
+        </div>
+      )}
+      {generatedFromFile && regenerateError && (
+        <div className="message message-error" role="alert">
+          {regenerateError}{" "}
+          <button type="button" className="link-button inline-link" onClick={regenerateSpeech} disabled={isRegenerating}>
+            Try again
+          </button>
+        </div>
+      )}
+
       {/* ---------- Mode switch ---------- */}
       <div className="mode-switch-row">
         <div className="mode-switch" role="group" aria-label="Practise mode">
@@ -176,7 +222,8 @@ export default function PractiseStep({
             </section>
           ) : activeMode === "practice" ? (
             // ---------- Practice mode: teleprompter + background recognition ----------
-            <Teleprompter lines={lines} recorder={recorder} />
+            // key: a new speech (e.g. regenerated) restarts the teleprompter at line 1
+            <Teleprompter key={speechText} lines={lines} recorder={recorder} />
           ) : (
             // ---------- Live transcript mode (unchanged) ----------
             <section className="card recorder-card" aria-labelledby="recorder-heading">

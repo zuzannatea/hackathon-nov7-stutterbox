@@ -1,11 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { AnalysisRequest, Feedback } from "../routes/analyze.js";
+import type { AnalysisRequest, AnalysisResult, Feedback } from "../routes/analyze.js";
 import { AnalysisProviderError, AnalysisUnavailableError } from "./analysisErrors.js";
 
 /**
- * AnalysisRequest plus the agreed optional planned script. Member 2 is adding
- * `intendedSpeech?: string` to AnalysisRequest in routes/analyze.ts; once that
- * lands this alias is equivalent and still compatible with AnalyseSpeech.
+ * AnalysisRequest plus the optional planned script accepted by the route.
  */
 export type AnalysisInput = AnalysisRequest & { intendedSpeech?: string };
 
@@ -29,15 +27,27 @@ const MIN_TRANSCRIPT_WORDS = 5;
  */
 export const COACH_SYSTEM_PROMPT = `You are Stutterbox, a supportive, specific public-speaking coach.
 
-You receive (1) the speaker's presentation context, (2) a transcript of one practice attempt, and (3) speech statistics calculated by code. Return feedback in the required JSON format.
+You receive the speaker's presentation plan, a transcript of one practice attempt, speech statistics calculated by code, and optionally the script they planned to deliver. Return feedback in the required JSON format.
+
+Planning versus execution:
+- planningAssessment evaluates the plan itself: whether the title is clear and relevant; the content suits the stated audience; the purpose is clear and achievable; the key points support that purpose; and the intended tone is appropriate. Do not claim that the speaker delivered the plan in this assessment.
+- executionAssessment evaluates the actual attempt using the transcript and statistics: whether the wording appears to achieve the purpose, explains the key points, suits the audience, and matches the requested tone; and whether actual duration is appropriate for the target.
+- Explicitly distinguish between transcript evidence and interpretation. If the transcript does not support a conclusion, say that it cannot be determined from text alone. Do not infer vocal confidence, enthusiasm, pitch, emotion, or other audio characteristics.
+- Keep plan quality separate from execution quality. The plan may be coherent even if the delivery missed it, or vice versa.
 
 About the transcript:
 - It comes from the browser's Web Speech API. It has little or no punctuation, may contain misheard words, and often drops fillers such as "um" and "uh".
 - Never criticise punctuation, grammar, capitalisation or sentence length. If a word looks misheard, assume the speaker said the sensible word.
-- Treat the filler-word count and sentence count as rough estimates, not precise measurements.
+- Treat filler-word counts as rough estimates, not precise measurements.
+
+Transcript formatting:
+- Return formattedTranscript by adding appropriate punctuation and capitalisation to the original transcript.
+- Preserve the original words in the same order, including repeated words and fillers such as "um" and "uh".
+- Do not paraphrase, summarise, correct grammar, rewrite sentences, or add or remove words.
+- formattedTranscript is only for display. Use the original transcript for all analysis, statistics, key-point coverage, and evidence.
 
 Grounding:
-- Base every point on the transcript or the statistics. Do not give generic advice that could apply to any speech; tie each point to this speech.
+- Base planningAssessment only on the supplied presentation plan. Base executionAssessment and transcript evidence on the transcript and statistics. Do not give generic advice that could apply to any speech.
 - "evidence" must be a short exact quote copied from the transcript (under 25 words), or an empty string if no quote fits.
 - Never invent numbers. Only use figures given in the statistics or presentation context.
 
@@ -71,7 +81,10 @@ Output requirements:
 - improvements: 2-4 items, most important first, each with one concrete recommendation.
 - keyPointCoverage: exactly one entry per key point, in the order given, with keyPoint copied word for word. status is "covered" (clearly made), "partial" (mentioned but not developed) or "missing" (not mentioned).
 - nextSteps: exactly 3 short, practical actions for the next attempt.
-- suggestedRewrite: the weakest passage rewritten in the speaker's own voice (at most about 80 words), or an empty string if nothing needs rewriting.`;
+- suggestedRewrite: the weakest passage rewritten in the speaker's own voice (at most about 80 words), or an empty string if nothing needs rewriting.
+- planningAssessment: a concise assessment of the presentation plan, not its delivery.
+- executionAssessment: a concise assessment of the actual attempt, grounded in transcript/statistics and noting text-only limits.
+- formattedTranscript: the original transcript with punctuation and capitalisation added, preserving every word in its original order.`;
 
 /**
  * JSON schema for Claude's structured output. Optional fields from the
@@ -83,6 +96,9 @@ const FEEDBACK_SCHEMA: Record<string, unknown> = {
   additionalProperties: false,
   required: [
     "overallAssessment",
+    "formattedTranscript",
+    "planningAssessment",
+    "executionAssessment",
     "strengths",
     "improvements",
     "keyPointCoverage",
@@ -91,6 +107,9 @@ const FEEDBACK_SCHEMA: Record<string, unknown> = {
   ],
   properties: {
     overallAssessment: { type: "string" },
+    formattedTranscript: { type: "string" },
+    planningAssessment: { type: "string" },
+    executionAssessment: { type: "string" },
     strengths: {
       type: "array",
       items: {
@@ -139,10 +158,15 @@ const FEEDBACK_SCHEMA: Record<string, unknown> = {
 type CoverageStatus = Feedback["keyPointCoverage"][number]["status"];
 const COVERAGE_STATUSES: readonly CoverageStatus[] = ["covered", "partial", "missing"];
 
-function notEnoughSpeechFeedback(): Feedback {
+function notEnoughSpeechFeedback(transcript: string): AnalysisResult {
   return {
+    formattedTranscript: transcript,
     overallAssessment:
       "We couldn't hear enough speech to give you feedback on this attempt. Only a few words were picked up, so there is nothing meaningful to review yet.",
+    planningAssessment:
+      "The presentation plan is available, but this attempt was too short to assess how its title, audience, purpose, key points, and intended tone fit together.",
+    executionAssessment:
+      "There is not enough transcript to assess whether the attempt achieved its purpose, explained the key points, suited the audience, or matched the requested tone. Audio delivery cannot be assessed from this text.",
     strengths: [],
     improvements: [],
     keyPointCoverage: [],
@@ -170,7 +194,7 @@ function formatDuration(seconds: number): string {
   return `${minutes} min ${remainder} s`;
 }
 
-function buildUserMessage({ presentation, transcript, statistics, inspiration, intendedSpeech }: AnalysisInput): string {
+export function buildUserMessage({ presentation, transcript, statistics, inspiration, intendedSpeech }: AnalysisInput): string {
   const fillerEntries = Object.entries(statistics.fillerWords);
   const fillerSummary =
     fillerEntries.length > 0
@@ -187,7 +211,7 @@ function buildUserMessage({ presentation, transcript, statistics, inspiration, i
     `Desired duration: ${presentation.desiredDurationMinutes} min`,
     `Key points to cover (in order):\n${keyPoints}`,
     "",
-    "STATISTICS (calculated by code; filler and sentence counts are estimates)",
+    "STATISTICS (calculated by code; filler counts are estimates)",
     `Actual duration: ${formatDuration(statistics.durationSeconds)}`,
     `Word count: ${statistics.wordCount}`,
     `Words per minute: ${Math.round(statistics.wordsPerMinute)}`,
@@ -195,7 +219,6 @@ function buildUserMessage({ presentation, transcript, statistics, inspiration, i
     fillerEntries.some(([, count]) => count >= 2)
       ? "A filler appears 2 or more times: mention the most frequent one."
       : "No filler appears 2 or more times: do not mention filler words.",
-    `Sentence count: ${statistics.sentenceCount}`,
     "",
     `<transcript>\n${stripDataTags(transcript)}\n</transcript>`,
   ];
@@ -236,6 +259,13 @@ function normaliseForMatch(text: string): string {
   return text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
 
+function preservesOriginalWords(original: string, formatted: string): boolean {
+  const originalWords = normaliseForMatch(original).split(/\s+/).filter(Boolean);
+  const formattedWords = normaliseForMatch(formatted).split(/\s+/).filter(Boolean);
+  return originalWords.length === formattedWords.length &&
+    originalWords.every((word, index) => word === formattedWords[index]);
+}
+
 /** Keeps evidence only if it is a non-empty quote that really appears in the transcript. */
 function evidenceFrom(value: unknown, normalisedTranscript: string): string | undefined {
   const text = requiredText(value);
@@ -244,11 +274,20 @@ function evidenceFrom(value: unknown, normalisedTranscript: string): string | un
   return normalised && normalisedTranscript.includes(normalised) ? text : undefined;
 }
 
-function validateFeedback(raw: unknown, request: AnalysisRequest): Feedback | string {
+export function validateFeedback(raw: unknown, request: AnalysisInput): AnalysisResult | string {
   if (!isRecord(raw)) return "response is not an object";
 
   const overallAssessment = requiredText(raw.overallAssessment);
   if (!overallAssessment) return "missing overallAssessment";
+  const formattedTranscript = requiredText(raw.formattedTranscript);
+  if (!formattedTranscript) return "missing formattedTranscript";
+  if (!preservesOriginalWords(request.transcript, formattedTranscript)) {
+    return "formattedTranscript changed or omitted words from the original transcript";
+  }
+  const planningAssessment = requiredText(raw.planningAssessment);
+  if (!planningAssessment) return "missing planningAssessment";
+  const executionAssessment = requiredText(raw.executionAssessment);
+  if (!executionAssessment) return "missing executionAssessment";
 
   if (
     !Array.isArray(raw.strengths) ||
@@ -310,7 +349,10 @@ function validateFeedback(raw: unknown, request: AnalysisRequest): Feedback | st
   const suggestedRewrite = requiredText(raw.suggestedRewrite);
 
   return {
+    formattedTranscript,
     overallAssessment,
+    planningAssessment,
+    executionAssessment,
     strengths: strengths.slice(0, 3),
     improvements: improvements.slice(0, 4),
     keyPointCoverage,
@@ -341,9 +383,9 @@ function logFailure(reason: string): void {
  * legitimate feedback without requiring the provider. Configuration and
  * provider failures reject with safe, typed errors for the route to map.
  */
-export async function analyseSpeech(request: AnalysisInput): Promise<Feedback> {
+export async function analyseSpeech(request: AnalysisInput): Promise<AnalysisResult> {
   if (countWords(request.transcript) < MIN_TRANSCRIPT_WORDS) {
-    return notEnoughSpeechFeedback();
+    return notEnoughSpeechFeedback(request.transcript);
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim();

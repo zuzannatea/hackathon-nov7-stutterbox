@@ -9,13 +9,23 @@ interface FileDropZoneProps {
   disabled?: boolean;
   /** id of an error message to link for screen readers. */
   describedBy?: string;
+  /** Main text and the small hint under it (defaults are for speech documents). */
+  title?: string;
+  hint?: string;
 }
 
 /**
  * Dashed area you can drop a file onto. It's a real <button>, so clicking it,
  * Enter and Space all open the file picker for keyboard users.
  */
-export default function FileDropZone({ onFile, onBrowse, disabled = false, describedBy }: FileDropZoneProps) {
+export default function FileDropZone({
+  onFile,
+  onBrowse,
+  disabled = false,
+  describedBy,
+  title = "Drop a file here",
+  hint = ".txt, .docx or .pdf · up to 10 MB",
+}: FileDropZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
 
   function handleDragOver(event: DragEvent<HTMLButtonElement>) {
@@ -45,8 +55,8 @@ export default function FileDropZone({ onFile, onBrowse, disabled = false, descr
         <FileUp size={20} />
       </span>
       <span className="drop-zone-text">
-        <span className="drop-zone-title">{isDragging ? "Drop to upload" : "Drop a file here"}</span>
-        <span className="drop-zone-hint">.txt, .docx or .pdf · up to 10 MB</span>
+        <span className="drop-zone-title">{isDragging ? "Drop to upload" : title}</span>
+        <span className="drop-zone-hint">{hint}</span>
       </span>
     </button>
   );
