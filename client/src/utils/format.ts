@@ -5,9 +5,3 @@ export function formatTime(totalSeconds: number): string {
   const seconds = safeSeconds % 60;
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
-
-/** Counts words the same simple way as the backend: whitespace-separated pieces. */
-export function countWords(text: string): number {
-  const trimmed = text.trim();
-  return trimmed === "" ? 0 : trimmed.split(/\s+/).length;
-}

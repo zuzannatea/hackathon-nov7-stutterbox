@@ -1,12 +1,17 @@
-import { ArrowLeft } from "lucide-react";
 import { useEffect, useState } from "react";
 import "./App.css";
+import {
+  AnalysisApiError,
+  submitAnalysis,
+  type AnalysisApiErrorInfo,
+} from "./services/analysisApi";
 import Header from "./components/Header";
+import FeedbackStep from "./components/FeedbackStep";
 import Home from "./components/Home";
 import PractiseStep from "./components/PractiseStep";
 import PresentationForm from "./components/PresentationForm";
 import StepProgress from "./components/StepProgress";
-import type { PractiseAttempt, Presentation } from "./types";
+import type { AnalysisResponse, AnalyzeRequestBody, PractiseAttempt, Presentation } from "./types";
 
 // Which screen is showing. Flow: Home → 1 Your speech → 2 Your aims → 3 Practise → 4 Feedback.
 // TODO (part a): add the "speech" screen (Step 1) and point Input Speech at it.
@@ -14,7 +19,7 @@ type Screen =
   | "home" // landing page
   | "aims" // Step 2: presentation details form
   | "practise" // Step 3: record the speech
-  | "feedback"; // Step 4: results (placeholder until part c)
+  | "feedback"; // Step 4: analysis results
 
 const QUICK_TIPS = [
   "Write 3–5 key points. These are what your feedback checks for.",
@@ -35,6 +40,9 @@ function App() {
   const [presentation, setPresentation] = useState<Presentation | null>(null);
   // Step 3 finished attempt (transcript + duration).
   const [attempt, setAttempt] = useState<PractiseAttempt | null>(null);
+  const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [analysisError, setAnalysisError] = useState<AnalysisApiErrorInfo | null>(null);
 
   const [serverStatus, setServerStatus] = useState("checking…");
 
@@ -54,17 +62,70 @@ function App() {
   }, [screen]);
 
   function goHome() {
+    if (isSubmitting) return;
     setScreen("home");
     window.scrollTo(0, 0); // also scroll up if we were already on Home
   }
 
   function startFlow() {
+    if (isSubmitting) return;
+    setAnalysis(null);
+    setAnalysisError(null);
+    setAttempt(null);
     setScreen("aims"); // TODO (part a): go to Step 1 "speech" instead
   }
 
   function handleAimsSubmit(newPresentation: Presentation) {
     setPresentation(newPresentation);
+    setAttempt(null);
+    setAnalysis(null);
+    setAnalysisError(null);
     setScreen("practise");
+  }
+
+  function handleAttemptChange(newAttempt: PractiseAttempt | null) {
+    setAttempt(newAttempt);
+    if (newAttempt === null) {
+      setAnalysis(null);
+      setAnalysisError(null);
+    }
+  }
+
+  async function handleGetFeedback() {
+    if (isSubmitting) return;
+    if (!presentation || !attempt || !attempt.transcript.trim()) {
+      setAnalysisError({
+        kind: "request",
+        message: "Your presentation details and a transcript are needed before analysis.",
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+    setAnalysisError(null);
+
+    const request: Pick<AnalyzeRequestBody, "presentation" | "transcript" | "durationSeconds"> = {
+      presentation,
+      transcript: attempt.transcript,
+      durationSeconds: attempt.durationSeconds,
+    };
+
+    try {
+      const response = await submitAnalysis(request);
+      setAnalysis(response);
+      setScreen("feedback");
+    } catch (error) {
+      if (error instanceof AnalysisApiError) {
+        setAnalysisError({ kind: error.kind, message: error.message, status: error.status });
+      } else {
+        setAnalysisError({
+          kind: "request",
+          message: "Something went wrong while requesting feedback. Please try again.",
+        });
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   // Step 1 is skipped until it exists (or when the user skips it).
@@ -121,27 +182,23 @@ function App() {
                   speechTitle={speechTitle}
                   speechText={speechText}
                   attempt={attempt}
-                  onAttemptChange={setAttempt}
+                  onAttemptChange={handleAttemptChange}
                   onBack={() => setScreen("aims")}
-                  onGetFeedback={() => setScreen("feedback")}
+                  onGetFeedback={handleGetFeedback}
+                  isSubmitting={isSubmitting}
+                  analysisError={analysisError}
                 />
               </>
             )}
 
-            {screen === "feedback" && (
-              // TODO (part c): replace this placeholder with the real Feedback screen.
+            {screen === "feedback" && analysis && (
               <>
                 <StepProgress currentStep={4} skippedSteps={skippedSteps} />
                 <div className="page-heading">
                   <h1>Your feedback</h1>
-                  <p>The feedback screen is coming in the next part.</p>
+                  <p>Review your speech statistics and suggestions for your next practice.</p>
                 </div>
-                <div className="step-nav">
-                  <button type="button" className="button-back" onClick={() => setScreen("practise")}>
-                    <ArrowLeft size={16} aria-hidden="true" />
-                    Back
-                  </button>
-                </div>
+                <FeedbackStep analysis={analysis} onBack={() => setScreen("practise")} />
               </>
             )}
           </main>

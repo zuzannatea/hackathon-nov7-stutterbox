@@ -1,8 +1,9 @@
 import { ArrowLeft, ArrowRight, Mic, RotateCcw, Square } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useSpeechRecorder } from "../hooks/useSpeechRecorder";
+import type { AnalysisApiErrorInfo } from "../services/analysisApi";
 import type { PractiseAttempt } from "../types";
-import { countWords, formatTime } from "../utils/format";
+import { formatTime } from "../utils/format";
 
 // Team decisions for the demo (PROJECT.md section 12 "Open decisions").
 const MAX_RECORDING_SECONDS = 10 * 60; // 10 minutes
@@ -24,6 +25,8 @@ interface PractiseStepProps {
   onAttemptChange: (attempt: PractiseAttempt | null) => void;
   onBack: () => void;
   onGetFeedback: () => void;
+  isSubmitting: boolean;
+  analysisError: AnalysisApiErrorInfo | null;
 }
 
 export default function PractiseStep({
@@ -33,6 +36,8 @@ export default function PractiseStep({
   onAttemptChange,
   onBack,
   onGetFeedback,
+  isSubmitting,
+  analysisError,
 }: PractiseStepProps) {
   const recorder = useSpeechRecorder({
     language: RECOGNITION_LANGUAGE,
@@ -102,11 +107,22 @@ export default function PractiseStep({
                   {attempt.source === "typed" ? "Typed transcript (not spoken)" : "Spoken, transcribed live"}
                 </li>
                 <li className="chip">Duration {formatTime(attempt.durationSeconds)}</li>
-                <li className="chip">{countWords(attempt.transcript)} words</li>
               </ul>
               <div className="transcript-box">{attempt.transcript}</div>
+              {analysisError && (
+                <div className="message message-error" role="alert">
+                  {analysisError.kind === "network"
+                    ? analysisError.message
+                    : `Analysis request${analysisError.status ? ` (HTTP ${analysisError.status})` : ""} failed: ${analysisError.message}`}
+                </div>
+              )}
               <div className="form-actions">
-                <button type="button" className="button-secondary" onClick={recordAgain}>
+                <button
+                  type="button"
+                  className="button-secondary"
+                  onClick={recordAgain}
+                  disabled={isSubmitting}
+                >
                   <RotateCcw size={16} aria-hidden="true" />
                   Record again
                 </button>
@@ -114,10 +130,10 @@ export default function PractiseStep({
                   type="button"
                   className="button-primary"
                   onClick={onGetFeedback}
-                  disabled={attempt.transcript.trim() === ""}
+                  disabled={isSubmitting || attempt.transcript.trim() === ""}
                 >
-                  Get feedback
-                  <ArrowRight size={18} aria-hidden="true" />
+                  {isSubmitting ? "Analyzing…" : "Get feedback"}
+                  {!isSubmitting && <ArrowRight size={18} aria-hidden="true" />}
                 </button>
               </div>
             </section>
@@ -230,7 +246,7 @@ export default function PractiseStep({
       </div>
 
       <div className="step-nav">
-        <button type="button" className="button-back" onClick={onBack}>
+        <button type="button" className="button-back" onClick={onBack} disabled={isSubmitting}>
           <ArrowLeft size={16} aria-hidden="true" />
           Back
         </button>
