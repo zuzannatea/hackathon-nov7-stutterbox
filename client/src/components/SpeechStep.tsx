@@ -1,15 +1,13 @@
-import { ArrowRight, FileText, RotateCcw, Sparkles, Upload, X } from "lucide-react";
+import { ArrowRight, FileText, RotateCcw, Sheet, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState, type ChangeEvent, type Dispatch, type SetStateAction } from "react";
-import type { SpeechDraft } from "../types";
+import type { CsvCell, CsvData, SpeechDraft } from "../types";
 import { countWords, formatTime } from "../utils/format";
-import { MAX_SPEECH_BRIEF_LENGTH, requestGeneratedSpeech } from "../services/generateSpeechApi";
+import { CSV_ACCEPT_ATTRIBUTE, readCsvFile } from "../utils/readCsvFile";
 import { ACCEPT_ATTRIBUTE, formatFileSize, readSpeechFile } from "../utils/readSpeechFile";
 import FileDropZone from "./FileDropZone";
 
 const SPEAKING_WORDS_PER_MINUTE = 140; // for the estimated speaking time
-
-const BRIEF_PLACEHOLDER =
-  "A 2-minute speech for my team's hackathon demo. Our app Stutterbox helps people practise speeches with a live transcript. Friendly tone, mention that we built it in one day.";
+const SAMPLE_ROWS_SENT = 200; // must match readCsvFile.ts
 
 const SPEECH_TIPS = [
   "Write how you speak. Short sentences are easier to say out loud.",
@@ -29,15 +27,42 @@ interface SpeechStepProps {
   /** The speech, kept in App.tsx so it survives moving between steps. */
   speech: SpeechDraft;
   onSpeechChange: Dispatch<SetStateAction<SpeechDraft>>;
+  /** The uploaded CSV data file, also kept in App.tsx (Practise can regenerate from it). */
+  csvData: CsvData | null;
+  onCsvDataChange: (data: CsvData | null) => void;
+  /** Turns the CSV into a speech (server side) and puts it into the speech. Resolves true on success. */
+  onGenerateFromCsv: () => Promise<boolean>;
+  isGeneratingFromCsv: boolean;
+  csvGenerateError: string | null;
   onContinue: () => void;
   onSkip: () => void;
 }
 
+/** "Quarterly Sales.csv" → "Quarterly Sales" */
+function nameWithoutExtension(fileName: string): string {
+  const dot = fileName.lastIndexOf(".");
+  return dot > 0 ? fileName.slice(0, dot) : fileName;
+}
+
+function displayCell(value: CsvCell): string {
+  return value === null ? "" : String(value);
+}
+
 /**
- * Step 1: type, paste, upload or generate the speech. The speech itself stays in
- * the browser; only a "Generate" description is sent to our server.
+ * Step 1: type or paste the speech, upload a speech document, OR upload a CSV
+ * data file that our server turns into a speech. Only one upload at a time.
  */
-export default function SpeechStep({ speech, onSpeechChange, onContinue, onSkip }: SpeechStepProps) {
+export default function SpeechStep({
+  speech,
+  onSpeechChange,
+  csvData,
+  onCsvDataChange,
+  onGenerateFromCsv,
+  isGeneratingFromCsv,
+  csvGenerateError,
+  onContinue,
+  onSkip,
+}: SpeechStepProps) {
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState("");
   // Name of the file being read (null when not reading). PDFs can take a moment.
@@ -46,24 +71,23 @@ export default function SpeechStep({ speech, onSpeechChange, onContinue, onSkip 
   const [pendingFile, setPendingFile] = useState<PendingFile | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const replaceButtonRef = useRef<HTMLButtonElement>(null);
-
-  // ---- "Generate a speech" ----
-  const [brief, setBrief] = useState(""); // what the user wants the speech to be based on
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [generateError, setGenerateError] = useState<string | null>(null);
-  const [preview, setPreview] = useState<string | null>(null); // generated text, editable before use
-  const generateAbortRef = useRef<AbortController | null>(null);
   const speechTextRef = useRef<HTMLTextAreaElement>(null);
 
-  // Upload and Generate can't both be active.
-  const uploadLocked = speech.source === "generated";
-  const generateLocked = speech.source === "upload";
+  // ---- CSV data upload ----
+  const [csvReadError, setCsvReadError] = useState<string | null>(null);
+  const [isReadingCsv, setIsReadingCsv] = useState(false);
+  const csvInputRef = useRef<HTMLInputElement>(null);
+
+  // Only one upload can be active: a speech document OR a CSV data file.
+  const speechUploadLocked = speech.source === "csv";
+  const csvUploadLocked = speech.source === "document";
 
   const wordCount = countWords(speech.text);
   const speakingSeconds = (wordCount / SPEAKING_WORDS_PER_MINUTE) * 60;
   const hasText = speech.text.trim() !== "";
+  const hasGeneratedFromCsv = speech.source === "csv" && hasText;
 
-  // A file dropped outside the drop zone would make the browser open it and
+  // A file dropped outside the drop zones would make the browser open it and
   // leave the app (losing work), so ignore drops anywhere else on this page.
   useEffect(() => {
     // (Only for files; dragging text into the textarea still works.)
@@ -78,13 +102,12 @@ export default function SpeechStep({ speech, onSpeechChange, onContinue, onSkip 
     };
   }, []);
 
-  // Cancel a generation request still in flight if the user leaves this step.
-  useEffect(() => () => generateAbortRef.current?.abort(), []);
-
   // When the "Replace your current speech?" question appears, move focus to it.
   useEffect(() => {
     if (pendingFile) replaceButtonRef.current?.focus();
   }, [pendingFile]);
+
+  // ---------------- Speech document upload (unchanged behaviour) ----------------
 
   function openFilePicker() {
     fileInputRef.current?.click();
@@ -96,16 +119,22 @@ export default function SpeechStep({ speech, onSpeechChange, onContinue, onSkip 
       title: current.title.trim() ? current.title : file.titleFromName,
       text: file.text,
       file: { name: file.name, sizeBytes: file.sizeBytes },
-      source: "upload",
+      source: "document",
     }));
     setPendingFile(null);
+    setCsvReadError(null); // a leftover CSV error no longer applies
     setStatusMessage(`Loaded ${file.name} into "Your speech". You can edit it below.`);
   }
 
   async function handleFile(file: File) {
+    if (speechUploadLocked) return;
     setError(null);
     setStatusMessage("");
     setPendingFile(null);
+    if (file.name.toLowerCase().endsWith(".csv")) {
+      setError('That\'s a data file. To turn data into a speech, use "Upload data (.csv)" below.');
+      return;
+    }
     setReadingFileName(file.name);
     const result = await readSpeechFile(file);
     setReadingFileName(null);
@@ -140,51 +169,71 @@ export default function SpeechStep({ speech, onSpeechChange, onContinue, onSkip 
   }
 
   function removeFileCard() {
-    onSpeechChange((current) => ({ ...current, file: null, source: current.source === "upload" ? null : current.source }));
-    setStatusMessage("File removed. Your speech text is unchanged. You can now generate a speech instead.");
+    onSpeechChange((current) => ({
+      ...current,
+      file: null,
+      source: current.source === "document" ? null : current.source,
+    }));
+    setStatusMessage("File removed. Your speech text is unchanged. You can now upload data instead.");
   }
 
-  /** Asks the server to write a speech. Guarded so it can't be sent twice at once. */
-  async function generate() {
-    if (isGenerating || generateLocked || !brief.trim()) return;
-    const controller = new AbortController();
-    generateAbortRef.current = controller;
-    setIsGenerating(true);
-    setGenerateError(null);
-    setStatusMessage("Writing your speech…");
-    try {
-      const text = await requestGeneratedSpeech(brief.trim(), controller.signal);
-      setPreview(text);
-      setStatusMessage("Your speech is ready to review below.");
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return; // left the page
-      setGenerateError(error instanceof Error ? error.message : "Something went wrong. Please try again.");
-      setStatusMessage("");
-    } finally {
-      if (generateAbortRef.current === controller) generateAbortRef.current = null;
-      setIsGenerating(false);
+  // ---------------- CSV data upload ----------------
+
+  function openCsvPicker() {
+    csvInputRef.current?.click();
+  }
+
+  async function handleCsvFile(file: File) {
+    if (csvUploadLocked || isReadingCsv) return;
+    setCsvReadError(null);
+    setStatusMessage("");
+    setIsReadingCsv(true);
+    const result = await readCsvFile(file);
+    setIsReadingCsv(false);
+    if (!result.ok) {
+      setCsvReadError(result.message);
+      return;
     }
+    onCsvDataChange(result.data);
+    setError(null); // a leftover speech-upload error no longer applies
+    onSpeechChange((current) => ({
+      ...current,
+      title: current.title.trim() ? current.title : nameWithoutExtension(file.name),
+      file: null,
+      source: "csv",
+    }));
+    setStatusMessage(`Loaded ${file.name}. Check the preview, then turn it into a speech.`);
   }
 
-  /** Puts the generated text into "Your speech", exactly like an uploaded document. */
-  function applyGeneratedSpeech() {
-    if (preview === null || !preview.trim()) return;
-    const text = preview.trim();
-    onSpeechChange((current) => ({ ...current, text, file: null, source: "generated" }));
-    setPreview(null);
-    setStatusMessage('Your generated speech is now in "Your speech". You can edit it there.');
-    speechTextRef.current?.focus();
-    speechTextRef.current?.scrollIntoView({ block: "center" });
+  function handleCsvInputChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file) void handleCsvFile(file);
   }
 
-  function removeGeneratedSpeech() {
-    onSpeechChange((current) => ({ ...current, text: "", source: null }));
-    setStatusMessage("Generated speech removed. You can now upload a document instead.");
+  function removeCsv() {
+    onCsvDataChange(null);
+    onSpeechChange((current) => ({ ...current, source: current.source === "csv" ? null : current.source }));
+    setCsvReadError(null);
+    setStatusMessage("Data file removed. Your speech text is unchanged. You can now upload a speech instead.");
+  }
+
+  async function generateFromCsv() {
+    if (isGeneratingFromCsv) return; // no double submissions
+    setStatusMessage("Turning your data into a speech…");
+    const ok = await onGenerateFromCsv();
+    if (ok) {
+      setStatusMessage('Your speech is ready in "Your speech" above. You can edit it there.');
+      speechTextRef.current?.focus();
+      speechTextRef.current?.scrollIntoView({ block: "center" });
+    } else {
+      setStatusMessage("");
+    }
   }
 
   return (
     <div className="speech-layout">
-      {/* ---------- Left: title, speech text and buttons ---------- */}
+      {/* ---------- Left: title, speech text and uploads ---------- */}
       <section className="card speech-card" aria-label="Your speech">
         <div className="field">
           <label htmlFor="speech-title">Speech title (optional)</label>
@@ -216,33 +265,34 @@ export default function SpeechStep({ speech, onSpeechChange, onContinue, onSkip 
           </ul>
         </div>
 
-        {/* Stacked: drop zone (full width), then Continue, then Skip */}
+        <p className="visually-hidden" role="status">
+          {isReading ? `Reading ${readingFileName}…` : isReadingCsv ? "Reading CSV file…" : statusMessage}
+        </p>
+
+        {/* Stacked: upload a speech, — or —, upload data, then Continue and Skip */}
         <div className="speech-actions">
-          <div className="drop-cell">
+          {/* ---------- 1. Upload your speech ---------- */}
+          <section className="drop-cell" aria-labelledby="upload-speech-heading">
+            <h2 id="upload-speech-heading" className="card-heading-small">
+              Upload your speech
+            </h2>
             <FileDropZone
               onFile={(file) => void handleFile(file)}
               onBrowse={openFilePicker}
-              disabled={isReading || uploadLocked}
-              describedBy={uploadLocked ? "upload-locked-note" : error ? "upload-error" : undefined}
+              disabled={isReading || speechUploadLocked}
+              describedBy={speechUploadLocked ? "speech-locked-note" : error ? "upload-error" : undefined}
             />
 
-            {uploadLocked && (
-              <p id="upload-locked-note" className="hint locked-note">
-                You've generated a speech. Remove it to upload a document instead.{" "}
-                <button type="button" className="link-button inline-link" onClick={removeGeneratedSpeech}>
-                  Remove generated speech
-                </button>
+            {speechUploadLocked && (
+              <p id="speech-locked-note" className="hint locked-note">
+                You've uploaded data. Remove it to upload a speech instead.
               </p>
             )}
-
             {error && (
               <p id="upload-error" className="message message-error upload-message" role="alert">
                 {error}
               </p>
             )}
-            <p className="visually-hidden" role="status">
-              {isReading ? `Reading ${readingFileName}…` : statusMessage}
-            </p>
             {isReading && (
               <p className="hint reading-note">
                 Reading {readingFileName}…
@@ -274,96 +324,133 @@ export default function SpeechStep({ speech, onSpeechChange, onContinue, onSkip 
                 </div>
               </div>
             )}
-          </div>
+          </section>
 
-          {/* ---------- Generate a speech ---------- */}
           <p className="or-divider" aria-hidden="true">
             — or —
           </p>
-          <section className="generate-section" aria-labelledby="generate-heading">
-            <h2 id="generate-heading" className="card-heading-small">
-              No speech yet? Describe it and we'll write one.
+
+          {/* ---------- 2. Upload data (.csv) ---------- */}
+          <section className="csv-section" aria-labelledby="csv-heading">
+            <h2 id="csv-heading" className="card-heading-small">
+              Upload data (.csv)
             </h2>
-            <label htmlFor="speech-brief" className="visually-hidden">
-              Describe the speech you need
-            </label>
-            <textarea
-              id="speech-brief"
-              rows={5}
-              value={brief}
-              maxLength={MAX_SPEECH_BRIEF_LENGTH}
-              placeholder={BRIEF_PLACEHOLDER}
-              onChange={(e) => setBrief(e.target.value)}
-              disabled={generateLocked || isGenerating}
-              aria-describedby={generateLocked ? "generate-locked-note brief-count" : "brief-hint brief-count"}
-            />
-            <div className="brief-meta">
-              <p id="brief-hint" className="hint">
-                Topic, occasion, audience, length, tone, facts, names, stories or key points.
-              </p>
-              <p id="brief-count" className="hint brief-count">
-                {brief.length.toLocaleString("en-GB")} / {MAX_SPEECH_BRIEF_LENGTH.toLocaleString("en-GB")}
-              </p>
-            </div>
-            {generateLocked && (
-              <p id="generate-locked-note" className="hint locked-note">
-                You've uploaded a speech. Remove it to generate one instead.
+            <p className="hint csv-intro">We'll turn your data into a short spoken presentation.</p>
+
+            {csvUploadLocked && (
+              <p id="csv-locked-note" className="hint locked-note">
+                You've uploaded a speech. Remove it to upload data instead.
               </p>
             )}
 
-            <button
-              type="button"
-              className="button-secondary"
-              onClick={() => void generate()}
-              disabled={generateLocked || isGenerating || !brief.trim()}
-            >
-              <Sparkles size={16} aria-hidden="true" />
-              {isGenerating ? "Writing your speech…" : "Generate speech"}
-            </button>
-
-            {generateError && (
-              <div className="message message-error generate-error" role="alert">
-                {generateError}{" "}
-                <button type="button" className="link-button inline-link" onClick={() => void generate()}>
-                  Try again
-                </button>
-              </div>
+            {!csvData && (
+              <FileDropZone
+                onFile={(file) => void handleCsvFile(file)}
+                onBrowse={openCsvPicker}
+                disabled={csvUploadLocked || isReadingCsv}
+                describedBy={csvUploadLocked ? "csv-locked-note" : csvReadError ? "csv-error" : undefined}
+                title="Drop a CSV file here"
+                hint=".csv · up to 1 MB"
+              />
+            )}
+            {isReadingCsv && <p className="hint reading-note">Reading CSV file…</p>}
+            {csvReadError && (
+              <p id="csv-error" className="message message-error upload-message" role="alert">
+                {csvReadError}
+              </p>
             )}
 
-            {preview !== null && (
-              <div className="generated-preview">
-                <label htmlFor="generated-preview" className="generated-preview-label">
-                  Your generated speech (you can edit it)
-                </label>
-                <textarea
-                  id="generated-preview"
-                  rows={12}
-                  value={preview}
-                  onChange={(e) => setPreview(e.target.value)}
-                  disabled={isGenerating}
-                />
-                {hasText && (
-                  <p className="hint">Using it replaces the text in "Your speech".</p>
-                )}
-                <div className="generated-actions">
+            {csvData && (
+              <div className="csv-card">
+                <div className="csv-card-top">
+                  <span className="file-card-icon" aria-hidden="true">
+                    <Sheet size={20} />
+                  </span>
+                  <div className="file-card-text">
+                    <p className="file-card-name">{csvData.fileName}</p>
+                    <p className="file-card-meta">
+                      {csvData.rowCount.toLocaleString("en-GB")} {csvData.rowCount === 1 ? "row" : "rows"} ·{" "}
+                      {csvData.columnCount} {csvData.columnCount === 1 ? "column" : "columns"} ·{" "}
+                      {formatFileSize(csvData.sizeBytes)}
+                    </p>
+                  </div>
                   <button
                     type="button"
-                    className="button-secondary"
-                    onClick={() => void generate()}
-                    disabled={isGenerating || !brief.trim()}
+                    className="icon-button"
+                    onClick={removeCsv}
+                    disabled={isGeneratingFromCsv}
+                    aria-label="Remove data file"
                   >
-                    <RotateCcw size={16} aria-hidden="true" />
-                    Regenerate
-                  </button>
-                  <button
-                    type="button"
-                    className="button-primary"
-                    onClick={applyGeneratedSpeech}
-                    disabled={isGenerating || !preview.trim()}
-                  >
-                    Use this speech
+                    <X size={18} aria-hidden="true" />
                   </button>
                 </div>
+
+                <div className="table-scroll">
+                  <table className="csv-preview">
+                    <caption>
+                      First {csvData.previewRows.length} {csvData.previewRows.length === 1 ? "row" : "rows"} of{" "}
+                      {csvData.fileName}
+                    </caption>
+                    <thead>
+                      <tr>
+                        {csvData.request.columns.map((column, index) => (
+                          <th key={index} scope="col">
+                            {column}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {csvData.previewRows.map((row, rowIndex) => (
+                        <tr key={rowIndex}>
+                          {csvData.request.columns.map((_, columnIndex) => (
+                            <td key={columnIndex}>{displayCell(row[columnIndex] ?? null)}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {csvData.rowCount > SAMPLE_ROWS_SENT && (
+                  <p className="hint">
+                    This file has {csvData.rowCount.toLocaleString("en-GB")} rows. We'll use summaries of every
+                    column plus the first {SAMPLE_ROWS_SENT} rows.
+                  </p>
+                )}
+                {hasText && !hasGeneratedFromCsv && (
+                  <p className="hint">This replaces the text in "Your speech".</p>
+                )}
+
+                <div className="csv-actions">
+                  <button
+                    type="button"
+                    className={hasGeneratedFromCsv ? "button-secondary" : "button-primary"}
+                    onClick={() => void generateFromCsv()}
+                    disabled={isGeneratingFromCsv}
+                  >
+                    {hasGeneratedFromCsv && !isGeneratingFromCsv && <RotateCcw size={16} aria-hidden="true" />}
+                    {isGeneratingFromCsv
+                      ? "Turning your data into a speech…"
+                      : hasGeneratedFromCsv
+                        ? "Regenerate speech"
+                        : "Turn this data into a speech"}
+                  </button>
+                </div>
+
+                {csvGenerateError && (
+                  <div className="message message-error csv-generate-error" role="alert">
+                    {csvGenerateError}{" "}
+                    <button
+                      type="button"
+                      className="link-button inline-link"
+                      onClick={() => void generateFromCsv()}
+                      disabled={isGeneratingFromCsv}
+                    >
+                      Try again
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </section>
@@ -379,7 +466,7 @@ export default function SpeechStep({ speech, onSpeechChange, onContinue, onSkip 
           </div>
         </div>
 
-        {/* One hidden file picker, opened by both "Upload Document" and the drop zone */}
+        {/* Hidden file pickers: speech documents (drop zone + Upload Document) and CSV data */}
         <input
           ref={fileInputRef}
           type="file"
@@ -389,6 +476,15 @@ export default function SpeechStep({ speech, onSpeechChange, onContinue, onSkip 
           aria-hidden="true"
           onChange={handleFileInputChange}
         />
+        <input
+          ref={csvInputRef}
+          type="file"
+          accept={CSV_ACCEPT_ATTRIBUTE}
+          className="visually-hidden"
+          tabIndex={-1}
+          aria-hidden="true"
+          onChange={handleCsvInputChange}
+        />
       </section>
 
       {/* ---------- Right: Upload Document, file card, tips ---------- */}
@@ -397,8 +493,8 @@ export default function SpeechStep({ speech, onSpeechChange, onContinue, onSkip 
           type="button"
           className="button-secondary upload-button-wide"
           onClick={openFilePicker}
-          disabled={isReading || uploadLocked}
-          aria-describedby={uploadLocked ? "upload-locked-note" : undefined}
+          disabled={isReading || speechUploadLocked}
+          aria-describedby={speechUploadLocked ? "speech-locked-note" : undefined}
         >
           <Upload size={16} aria-hidden="true" />
           Upload Document

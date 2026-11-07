@@ -1,7 +1,7 @@
-// Asks our backend to write a speech from the user's description.
+// Asks our backend to turn uploaded CSV data into a speech.
 // The backend calls Claude; the API key never reaches the browser.
 
-export const MAX_SPEECH_BRIEF_LENGTH = 3_000; // same limit as the server
+import type { CsvSpeechRequest } from "../types";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -10,28 +10,28 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function fallbackMessage(status: number): string {
   switch (status) {
     case 400:
-      return "Please check your description and try again.";
+      return "The data couldn't be read. Please upload the CSV file again.";
+    case 413:
+      return "This data is too large to send. Please use a smaller CSV file.";
     case 503:
       return "Speech writing isn't available right now. Please try again later.";
     case 504:
-      return "Writing your speech took too long. Please try again.";
+      return "Turning your data into a speech took too long. Please try again.";
     default:
       return "Something went wrong while writing your speech. Please try again.";
   }
 }
 
 /** Returns the generated speech text, or throws an Error with a friendly message. */
-export async function requestGeneratedSpeech(brief: string, signal?: AbortSignal): Promise<string> {
+export async function requestSpeechFromCsv(request: CsvSpeechRequest): Promise<string> {
   let response: Response;
   try {
-    response = await fetch("/api/generate-speech", {
+    response = await fetch("/api/generate-speech-from-csv", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ brief }),
-      signal,
+      body: JSON.stringify(request),
     });
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") throw error;
+  } catch {
     throw new Error("Couldn't reach the server. Check your connection and try again.");
   }
 
