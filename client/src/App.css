@@ -1220,12 +1220,7 @@ button[aria-disabled="true"] {
   }
 }
 
-/* ---------- Step 1: upload a speech OR upload data (.csv) ---------- */
-
-.drop-cell > .card-heading-small,
-.csv-section > .card-heading-small {
-  margin: 0;
-}
+/* ---------- Step 1: "Generate a speech" ---------- */
 
 .or-divider {
   margin: 1.25rem 0 0.75rem;
@@ -1235,14 +1230,41 @@ button[aria-disabled="true"] {
   color: var(--ink-muted);
 }
 
-.csv-section {
+.generate-section {
   display: grid;
-  gap: 0.75rem;
-  min-width: 0;
+  gap: 0.6rem;
+  padding: 1.1rem;
+  border: 1px solid var(--sage-100);
+  border-radius: 14px;
+  background: #ffffff;
 }
 
-.csv-intro {
-  margin: -0.4rem 0 0;
+.generate-section .card-heading-small {
+  margin: 0;
+}
+
+.generate-section > .button-secondary {
+  justify-self: start;
+}
+
+/* "Upload .csv" button and character counter under the prompt */
+.brief-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+}
+
+.brief-tools .hint,
+.brief-hint,
+.csv-prompt-error {
+  margin: 0;
+}
+
+.brief-count {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .locked-note {
@@ -1253,90 +1275,169 @@ button[aria-disabled="true"] {
   color: var(--sage-900);
 }
 
-.csv-card {
-  display: grid;
-  gap: 0.75rem;
-  min-width: 0;
-  padding: 0.9rem;
-  border: 1px solid var(--sage-100);
-  border-radius: 14px;
-  background: #ffffff;
-}
-
-.csv-card .hint {
+.generate-error {
   margin: 0;
 }
 
-.csv-card-top {
-  display: flex;
+@media (max-width: 600px) {
+  .results-actions > button,
+  .generate-section > .button-secondary {
+    flex: 1 1 100%;
+    justify-self: stretch;
+  }
+}
+
+/* ---------- Step 1: attached CSV chip ---------- */
+
+.attachment-chip {
+  display: inline-flex;
   align-items: center;
-  gap: 0.75rem;
-}
-
-/* Wide tables scroll sideways inside the card, never the whole page */
-.table-scroll {
-  overflow-x: auto;
-  border: 1px solid var(--sage-100);
-  border-radius: 10px;
-}
-
-.csv-preview {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.8rem;
-}
-
-.csv-preview caption {
-  padding: 0.5rem 0.75rem;
-  text-align: left;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--ink-muted);
+  gap: 0.4rem;
+  justify-self: start;
+  max-width: 100%;
+  padding: 0.25rem 0.3rem 0.25rem 0.75rem;
+  border: 1px solid var(--sage-200);
+  border-radius: 999px;
   background: var(--sage-50);
+  color: var(--sage-900);
+  font-size: 0.85rem;
+  font-weight: 600;
 }
 
-.csv-preview th,
-.csv-preview td {
-  padding: 0.4rem 0.75rem;
-  border-top: 1px solid var(--sage-100);
-  text-align: left;
-  white-space: nowrap;
-  max-width: 16rem;
+.attachment-chip-text {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.csv-preview th {
-  font-weight: 700;
+.attachment-chip-remove {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--sage-900);
+}
+
+.attachment-chip-remove:hover:not(:disabled) {
+  background: var(--sage-100);
+}
+
+/* ---------- Step 1: generated speech results ---------- */
+
+.results-card {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+  padding: 1.25rem;
+  background: #ffffff;
+  border: 1px solid var(--sage-100);
+  border-radius: 24px;
+}
+
+.results-heading,
+.versions-heading {
+  margin: 0;
+  font-size: 1.05rem;
   color: var(--ink);
 }
 
-.csv-actions {
+.results-meta {
+  margin: 0;
+}
+
+.results-card .hint {
+  margin: 0;
+}
+
+.results-text {
+  display: grid;
+  gap: 0.8rem;
+  font-size: 1rem;
+  line-height: 1.7;
+  color: var(--ink);
+}
+
+.results-text p {
+  margin: 0;
+}
+
+.results-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
 }
 
-.csv-generate-error {
-  margin: 0;
+.versions {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
 }
 
-/* Practise: "Generated from data.csv · Regenerate" */
-.generated-from {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem 0.75rem;
-  margin-bottom: 1rem;
+.versions-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr));
+  gap: 0.75rem;
 }
 
-.generated-from .hint {
-  margin: 0;
+.version-card {
+  display: grid;
+  gap: 0.35rem;
+  width: 100%;
+  height: 100%;
+  padding: 0.8rem 0.9rem;
+  text-align: left;
+  background: #ffffff;
+  border: 1px solid var(--sage-100);
+  border-radius: 14px;
+  color: var(--ink);
+}
+
+.version-card:hover:not(:disabled) {
+  border-color: var(--sage-500);
+}
+
+.version-card[aria-pressed="true"] {
+  border: 2px solid var(--sage-700);
+  background: var(--sage-50);
+}
+
+.version-card-title {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.version-card-current {
+  font-weight: 500;
+  color: var(--ink-muted);
+}
+
+.version-card-snippet {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--ink-muted);
+}
+
+.version-card-meta {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--sage-900);
 }
 
 @media (max-width: 600px) {
-  .csv-actions > button {
-    flex: 1 1 100%;
+  .results-card {
+    padding: 1rem;
+    border-radius: 18px;
+  }
+
+  .versions-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
