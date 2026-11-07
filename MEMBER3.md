@@ -100,20 +100,19 @@ interface Presentation {
 }
 ```
 
-The statistics are calculated by Member 2's backend service:
+The statistics are calculated by Member 2's backend service. The exported
+`SpeechStatistics` type in `server/services/statistics.ts` is the source of
+truth; use it directly rather than redefining or adding fields to it:
 
 ```ts
 interface SpeechStatistics {
   durationSeconds: number;
   wordCount: number;
   wordsPerMinute: number;
-  fillerWordCount: number;
   fillerWords: Record<string, number>;
   sentenceCount: number;
 }
 ```
-
-Check the actual exported type in the repository before copying or redefining it.
 
 ### What the input means
 
