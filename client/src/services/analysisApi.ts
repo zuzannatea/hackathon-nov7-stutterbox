@@ -20,7 +20,8 @@ export class AnalysisApiError extends Error implements AnalysisApiErrorInfo {
   }
 }
 
-type AnalysisSubmission = Pick<AnalyzeRequestBody, "presentation" | "transcript" | "durationSeconds">;
+type AnalysisSubmission = Pick<AnalyzeRequestBody, "presentation" | "transcript" | "durationSeconds" | "intendedSpeech">;
+const MAX_INTENDED_SPEECH_LENGTH = 20_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -45,6 +46,13 @@ function fallbackHttpMessage(status: number): string {
 
 /** Sends only the backend request fields; frontend-only attempt metadata is excluded. */
 export async function submitAnalysis(request: AnalysisSubmission): Promise<AnalysisResponse> {
+  if (request.intendedSpeech && request.intendedSpeech.length > MAX_INTENDED_SPEECH_LENGTH) {
+    throw new AnalysisApiError(
+      "request",
+      `Your prepared speech must be ${MAX_INTENDED_SPEECH_LENGTH} characters or fewer to include it in the analysis.`,
+    );
+  }
+
   let response: Response;
   try {
     response = await fetch("/api/analyze", {
@@ -54,6 +62,7 @@ export async function submitAnalysis(request: AnalysisSubmission): Promise<Analy
         presentation: request.presentation,
         transcript: request.transcript,
         durationSeconds: request.durationSeconds,
+        ...(request.intendedSpeech?.trim() ? { intendedSpeech: request.intendedSpeech } : {}),
       }),
     });
   } catch {
@@ -84,7 +93,13 @@ export async function submitAnalysis(request: AnalysisSubmission): Promise<Analy
     throw new AnalysisApiError("http", message, response.status);
   }
 
-  if (!isRecord(body) || typeof body.transcript !== "string" || !isRecord(body.statistics) || !isRecord(body.feedback)) {
+  if (
+    !isRecord(body) ||
+    typeof body.transcript !== "string" ||
+    typeof body.formattedTranscript !== "string" ||
+    !isRecord(body.statistics) ||
+    !isRecord(body.feedback)
+  ) {
     throw new AnalysisApiError(
       "response",
       "The server returned an unexpected analysis response. Please try again.",

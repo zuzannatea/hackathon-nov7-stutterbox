@@ -105,7 +105,6 @@ interface SpeechStatistics {
   wordCount: number;
   wordsPerMinute: number;
   fillerWords: Record<string, number>;
-  sentenceCount: number;
 }
 ```
 
@@ -117,6 +116,7 @@ interface AnalysisRequest {
   transcript: string;
   statistics: SpeechStatistics;
   inspiration?: string;
+  intendedSpeech?: string;
 }
 ```
 
@@ -128,6 +128,7 @@ interface AnalysisRequest {
 -   `presentation`: `Presentation` object
 -   `durationSeconds`: elapsed presentation duration measured by the frontend
 -   `inspiration`: optional text
+-   `intendedSpeech`: optional prepared script, up to 20,000 characters
 
 The backend performs the following sequence (Member 2 owns these steps):
 
@@ -135,7 +136,7 @@ The backend performs the following sequence (Member 2 owns these steps):
 2.  Calculate statistics from the transcript and duration.
 3.  Call Member 3's AI analysis service through the agreed function
     interface, passing an `AnalysisRequest`.
-4.  Combine the returned feedback with the transcript and statistics,
+4.  Combine the returned feedback and formatted transcript with the statistics,
     then return the agreed response.
 
 Member 3 owns the implementation of the AI analysis service and the
@@ -153,9 +154,12 @@ this MVP. The API key for Claude remains in the backend environment.
 ``` ts
 interface AnalysisResponse {
   transcript: string;
+  formattedTranscript: string;
   statistics: SpeechStatistics;
   feedback: {
     overallAssessment: string;
+    planningAssessment: string;
+    executionAssessment: string;
     strengths: Array<{
       title: string;
       explanation: string;
