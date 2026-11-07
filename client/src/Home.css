@@ -1,0 +1,399 @@
+/* Styles for the Home (landing) page only. The header is in components/Header.css.
+   Everything is scoped under .home so it can't change the form's look. */
+
+.home {
+  --home-text: var(--ink);
+  --home-text-muted: var(--ink-muted);
+  color: var(--home-text);
+  background: var(--background);
+  font-size: 1rem;
+}
+
+.home-container {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding-inline: 1.5rem;
+}
+
+.home h1,
+.home h2,
+.home h3 {
+  font-family: var(--font-heading);
+  color: var(--home-text);
+  margin: 0;
+}
+
+/* :where() keeps this rule weak, so the specific rules below can set margins */
+:where(.home) p {
+  margin: 0;
+}
+
+.home a:focus-visible,
+.home button:focus-visible {
+  outline: 3px solid var(--sage-900);
+  outline-offset: 3px;
+}
+
+/* ---------- Links ---------- */
+/* (The "Input Speech" button styles are shared and live in index.css.) */
+
+.home .cta-banner .cta-button:focus-visible {
+  outline-color: #ffffff;
+}
+
+.text-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--link);
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+
+.text-link:hover {
+  text-decoration: underline;
+}
+
+/* ---------- Hero ---------- */
+
+.hero {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  gap: 3rem;
+  padding-block: 3.5rem 4.5rem;
+}
+
+.eyebrow-pill {
+  display: inline-block;
+  background: var(--sage-50);
+  border: 1px solid var(--sage-200);
+  color: var(--sage-900);
+  border-radius: 999px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.hero h1 {
+  margin-top: 1rem;
+  font-size: clamp(2.4rem, 5vw, 3.4rem);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+
+.hero-intro {
+  margin-top: 1.25rem;
+  max-width: 30rem;
+  color: var(--home-text-muted);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem 1.5rem;
+  margin-top: 1.5rem;
+}
+
+.hero-small {
+  margin-top: 1rem;
+  font-size: 0.8rem;
+  color: var(--home-text-muted);
+}
+
+/* Illustration panel */
+.hero-illustration {
+  position: relative;
+  background: var(--sage-50);
+  border-radius: 20px;
+  overflow: hidden;
+  aspect-ratio: 400 / 380;
+  max-width: 100%;
+}
+
+.hero-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Example live-transcript card, floating over the illustration */
+.transcript-card {
+  position: absolute;
+  left: 3%;
+  bottom: 6%;
+  width: min(55%, 16rem);
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 0.7rem 0.8rem 0.8rem;
+  box-shadow: 0 8px 24px rgba(54, 68, 58, 0.18);
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+.transcript-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+
+.transcript-card-label {
+  font-weight: 700;
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sage-900);
+}
+
+.transcript-card-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: var(--sage-50);
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--sage-900);
+}
+
+.listening-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--sage-700);
+}
+
+.transcript-line-done {
+  color: var(--home-text-muted);
+}
+
+.transcript-line-current {
+  margin-top: 0.2rem;
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: var(--home-text);
+}
+
+.transcript-line-interim {
+  margin-top: 0.2rem;
+  color: #6b6b6b;
+  font-style: italic;
+}
+
+.transcript-progress {
+  margin-top: 0.5rem;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--sage-100);
+}
+
+.transcript-progress-fill {
+  width: 40%;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--sage-500);
+}
+
+/* ---------- Section headings ---------- */
+
+.eyebrow {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--home-text-muted);
+}
+
+.features h2,
+.steps h2 {
+  margin-top: 0.75rem;
+  font-size: clamp(1.6rem, 3.2vw, 2.1rem);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.features h2 {
+  max-width: 18em;
+}
+
+/* ---------- Features ---------- */
+
+.features {
+  background: var(--sage-50);
+  padding-block: 3.5rem 3.5rem;
+}
+
+.feature-grid {
+  list-style: none;
+  margin: 2rem 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.feature-card {
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 1.1rem 1rem 1.25rem;
+}
+
+.feature-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 6px;
+  background: var(--sage-50);
+  border: 1px solid var(--sage-200);
+  color: var(--sage-900);
+}
+
+.feature-card h3 {
+  margin-top: 0.9rem;
+  font-size: 0.95rem;
+  line-height: 1.3;
+}
+
+.feature-card p {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  line-height: 1.55;
+  color: var(--home-text-muted);
+}
+
+/* ---------- Steps ---------- */
+
+.steps {
+  padding-block: 3.5rem 3rem;
+  scroll-margin-top: 1rem;
+}
+
+.step-grid {
+  list-style: none;
+  margin: 1.75rem 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.step-card {
+  background: var(--sage-50);
+  border-top: 1px solid var(--sage-900);
+  border-radius: 0 0 10px 10px;
+  padding: 1rem 1rem 1.4rem;
+}
+
+.step-number {
+  display: block;
+  font-family: var(--font-heading);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--sage-700);
+}
+
+.step-card h3 {
+  margin-top: 0.4rem;
+  font-size: 0.95rem;
+}
+
+.step-card p {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  line-height: 1.55;
+  color: var(--home-text-muted);
+}
+
+/* ---------- Call-to-action banner ---------- */
+
+.cta-banner {
+  background: var(--sage-900);
+  color: #ffffff;
+  border-radius: 16px;
+  padding: 3rem 1.5rem;
+  margin-bottom: 3rem;
+  text-align: center;
+}
+
+.home .cta-banner h2 {
+  color: #ffffff;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+}
+
+.cta-banner p {
+  margin: 0.5rem 0 1.25rem;
+  font-size: 0.9rem;
+  color: var(--sage-50);
+}
+
+/* ---------- Footer ---------- */
+
+.home-footer {
+  border-top: 1px solid var(--sage-200);
+}
+
+.home-footer-inner {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem 1.5rem;
+  padding-block: 1.25rem;
+  font-size: 0.75rem;
+  color: var(--home-text-muted);
+}
+
+/* ---------- Narrower screens ---------- */
+
+@media (max-width: 960px) {
+  .feature-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 820px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2rem;
+    padding-block: 2.5rem 3rem;
+  }
+
+  .hero-illustration {
+    max-width: 30rem;
+  }
+
+  .step-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .home-container {
+    padding-inline: 1rem;
+  }
+
+  .feature-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Wider, smaller-text card on phones so it stays below the speaker's face */
+  .transcript-card {
+    width: 74%;
+    left: 4%;
+    bottom: 4%;
+    padding: 0.55rem 0.65rem 0.65rem;
+    font-size: 0.62rem;
+  }
+
+  .transcript-line-current {
+    font-size: 0.7rem;
+  }
+}
