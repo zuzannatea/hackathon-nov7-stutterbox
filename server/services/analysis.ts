@@ -59,6 +59,7 @@ Pace and timing:
 - Roughly 120-160 words per minute is a comfortable speaking pace.
 - Compare the actual duration with the desired duration and say whether the speaker ran short or long.
 - If the statistics or transcript show frequent filler words (e.g. 'like', 'you know', 'basically'), name the most frequent one in an improvement, quote an example from the transcript, and suggest replacing it with a short pause. Note that sounds like 'um' and 'uh' are not captured.
+- Only raise fillers when a single filler appears 2 or more times in the statistics. If every filler appears at most once, do not mention fillers at all. The evidence quote must contain the filler word itself.
 
 Inspiration:
 - If inspiration text is provided, one of your improvements MUST name one specific technique used in it (for example vivid imagery, repetition, or a direct call to action), quote or describe where it appears there, and recommend exactly how the speaker could adapt it in this speech. Skip this only when no inspiration text is provided.
@@ -215,6 +216,9 @@ export function buildUserMessage({ presentation, transcript, statistics, inspira
     `Word count: ${statistics.wordCount}`,
     `Words per minute: ${Math.round(statistics.wordsPerMinute)}`,
     `Filler words: ${fillerSummary}`,
+    fillerEntries.some(([, count]) => count >= 2)
+      ? "A filler appears 2 or more times: mention the most frequent one."
+      : "No filler appears 2 or more times: do not mention filler words.",
     "",
     `<transcript>\n${stripDataTags(transcript)}\n</transcript>`,
   ];
