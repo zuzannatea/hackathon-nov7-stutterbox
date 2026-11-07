@@ -12,7 +12,8 @@ import { AnalysisProviderError, AnalysisUnavailableError } from "../services/ana
 import type { AnalyseSpeech, Feedback, Presentation } from "../routes/analyze.js";
 
 // Compile-time check that the service matches Member 2's route interface.
-const runAnalysis: AnalyseSpeech = analyseSpeech;
+const routeCompatible: AnalyseSpeech = analyseSpeech;
+void routeCompatible;
 
 interface Sample {
   name: string;
@@ -20,6 +21,7 @@ interface Sample {
   transcript: string;
   durationSeconds: number;
   inspiration?: string;
+  intendedSpeech?: string;
 }
 
 const SAMPLES: Sample[] = [
@@ -107,6 +109,34 @@ const SAMPLES: Sample[] = [
     transcript: "hello can you",
     durationSeconds: 10,
   },
+  {
+    name: "5. Planned script vs what was said (one section skipped)",
+    presentation: {
+      title: "Why our society should volunteer at the food bank",
+      audience: "Members of the university volunteering society",
+      purpose: "Persuade members to sign up for weekly food bank shifts",
+      keyPoints: [
+        "Demand at the food bank has grown",
+        "A shift is only two hours",
+        "How to sign up",
+      ],
+      desiredDurationMinutes: 2,
+      tone: "Warm and encouraging",
+    },
+    transcript:
+      "hi everyone so I want to talk to you about the food bank on Barrack Street " +
+      "over the last year way more families have been coming in and the volunteers there honestly can't keep up with it " +
+      "the good news is it's not a big commitment a shift is just two hours and you can pick whatever day suits you " +
+      "you'd be sorting donations packing bags and chatting to people who come in " +
+      "so yeah I really think we could make a difference there thanks for listening",
+    durationSeconds: 45,
+    intendedSpeech:
+      "Hi everyone. Tonight I want to ask you to give two hours a week to the food bank on Barrack Street. " +
+      "Since last year, the number of families using the food bank has almost doubled, and the volunteers there are stretched thin. " +
+      "Volunteering is easy to fit in. A shift lasts just two hours, and you choose the day. You'll sort donations, pack food bags and welcome people at the door. " +
+      "Signing up takes one minute: scan the QR code on the poster by the door, pick a shift, and you'll get a confirmation email. If you sign up tonight, you could be on a shift this Saturday. " +
+      "Two hours from you can mean a full week of meals for a family. Thank you.",
+  },
 ];
 
 function isNotEnoughSpeech(feedback: Feedback): boolean {
@@ -138,11 +168,12 @@ async function main(): Promise<void> {
     let feedback: Feedback;
 
     try {
-      feedback = await runAnalysis({
+      feedback = await analyseSpeech({
         presentation: sample.presentation,
         transcript: sample.transcript,
         statistics,
         ...(sample.inspiration ? { inspiration: sample.inspiration } : {}),
+        ...(sample.intendedSpeech ? { intendedSpeech: sample.intendedSpeech } : {}),
       });
     } catch (error) {
       failed = true;
