@@ -259,8 +259,14 @@ interface SpeechStatistics {
 
 The statistics service is implemented in `server/services/statistics.ts`.
 Its MVP rules count
-whitespace-separated words, punctuation-based sentences, and the
-case-insensitive fillers `um`, `uh`, `erm`, and `er`. Invalid or
+whitespace-separated words, punctuation-based sentences, and
+case-insensitive, whole-word fillers: the phrases `you know`, `i mean`,
+`kind of`, `sort of`, `you see`, `or something`, and `and stuff` (counted
+first, with simple exclusions such as "what kind of" and "do you know");
+the words `basically`, `literally`, `actually`, `honestly`, `totally`,
+`anyway`, `um`, `uh`, `erm`, and `er`; and `like` except after words such
+as "I", "feel", or "looks" or before "a". Chrome's speech recognition
+usually strips `um` and `uh`, so they rarely appear. Invalid or
 non-positive durations normalize to zero. The team reviewed and accepted
 these limitations: abbreviations, decimals, and punctuation patterns can
 affect sentence counts; literal uses of filler terms may be counted;
