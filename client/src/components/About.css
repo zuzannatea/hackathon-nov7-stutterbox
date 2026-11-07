@@ -1,0 +1,98 @@
+/* About Us page. Builds on Home.css (sections, cards, steps, banner). */
+
+.about-hero {
+  padding-block: 2.5rem 2rem;
+}
+
+.about-back {
+  min-height: 44px;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.about-hero h1 {
+  margin-top: 0.75rem;
+  font-size: clamp(2.2rem, 5vw, 3.2rem);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.about-subtitle {
+  margin-top: 0.75rem;
+  max-width: 34rem;
+  font-size: 1.05rem;
+  line-height: 1.6;
+  color: var(--home-text-muted);
+}
+
+.about-section {
+  padding-block: 2.5rem 3rem;
+}
+
+.about-section h2,
+.about-page .features h2 {
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  line-height: 1.2;
+}
+
+.about-prose {
+  max-width: 44rem;
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.9rem;
+  font-size: 1rem;
+  line-height: 1.7;
+  color: var(--home-text-muted);
+}
+
+.about-small {
+  font-size: 0.85rem;
+}
+
+/* (.about-page prefix so this beats Home.css's ".home h3 { margin: 0 }") */
+.about-page .about-subheading {
+  margin-top: 2.5rem;
+  font-size: 1.2rem;
+}
+
+/* Steps sit on the sage section, so use white cards */
+.about-steps .step-card {
+  background: #ffffff;
+}
+
+.about-steps .step-card p {
+  font-size: 0.9rem;
+  color: var(--home-text);
+}
+
+/* "Who we can help": 3 per row on desktop, stacked on phones */
+.about-who-grid {
+  list-style: none;
+  margin: 1.5rem 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  gap: 0.9rem;
+}
+
+.about-who-grid .feature-card {
+  border: 1px solid var(--sage-100);
+}
+
+.about-note {
+  margin-top: 1.25rem;
+  max-width: 44rem;
+  padding: 0.9rem 1.1rem;
+  border-radius: 12px;
+  background: var(--sage-50);
+  border: 1px solid var(--sage-100);
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--home-text-muted);
+}
+
+.about-page .cta-banner {
+  margin-top: 1rem;
+}
