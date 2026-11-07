@@ -2,6 +2,7 @@ import express, { type ErrorRequestHandler } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { createAnalyzeRouter } from "./routes/analyze.js";
+import { createGenerateSpeechRouter } from "./routes/generateSpeech.js";
 import { analyseSpeech } from "./services/analysis.js";
 
 dotenv.config();
@@ -21,6 +22,7 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.use("/api/analyze", createAnalyzeRouter(analyseSpeech));
+app.use("/api/generate-speech", createGenerateSpeechRouter());
 
 const jsonErrorHandler: ErrorRequestHandler = (err: unknown, _req, res, next) => {
   if (typeof err === "object" && err !== null && "type" in err) {

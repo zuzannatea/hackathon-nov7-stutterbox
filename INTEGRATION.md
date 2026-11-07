@@ -400,3 +400,19 @@ the deterministic test suite.
 
 Do not describe the complete app as integrated until the real frontend
 request/results flow and Member 3's Claude service both pass these checks.
+
+## Speech generation (Step 1 "Generate a speech")
+
+Added by Member 1 with the team's agreement; route and prompt owners should review.
+
+- Route: `server/routes/generateSpeech.ts`, mounted at `POST /api/generate-speech`.
+- Service: `server/services/speechGeneration.ts` (Claude call and system prompt). It uses
+  `ANTHROPIC_API_KEY` and its own model setting `ANTHROPIC_SPEECH_MODEL`
+  (default `claude-sonnet-5-5`, separate from the analysis model), `effort: "low"`,
+  no retries, and the server-side refusal fallback (`fallbacks: "default"`).
+- Request: `{ "brief": string }`, trimmed, 1–3,000 characters.
+- Response: `{ "speech": string }`, plain text with paragraphs separated by blank lines.
+- Errors (`{ "error": string }`): `400` invalid or too long, `422` the model declined,
+  `502` provider failure, `503` no API key configured, `504` over the 45-second deadline.
+- The generated speech is frontend-only after this call: it becomes the Step 1 speech
+  text, exactly like an uploaded document. It is not added to `/api/analyze`.

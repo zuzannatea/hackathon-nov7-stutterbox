@@ -1,11 +1,12 @@
 import { ArrowLeft } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import {
   AnalysisApiError,
   submitAnalysis,
   type AnalysisApiErrorInfo,
 } from "./services/analysisApi";
+import About from "./components/About";
 import Header from "./components/Header";
 import FeedbackStep from "./components/FeedbackStep";
 import Home from "./components/Home";
@@ -20,6 +21,7 @@ import type {
   Presentation,
   SpeechDraft,
 } from "./types";
+import { celebrate } from "./utils/celebrate";
 import { createFormDraft, type FormDraft } from "./utils/formDraft";
 
 // Which screen is showing.
@@ -29,7 +31,18 @@ type Screen =
   | "speech" // Step 1: type, paste or upload the speech
   | "aims" // Step 2: presentation details form
   | "practise" // Step 3: record the speech
-  | "feedback"; // Step 4: analysis results
+  | "feedback" // Step 4: analysis results
+  | "about"; // About Us (not a step; reachable any time from the header)
+
+// Names used for the About page's "Back to …" button.
+const SCREEN_NAMES: Record<Screen, string> = {
+  home: "Home",
+  speech: "Add speech",
+  aims: "Your aims",
+  practise: "Practise",
+  feedback: "Feedback",
+  about: "About Us",
+};
 
 const AIMS_TIPS = [
   "Write 3–5 key points. These are what your feedback checks for.",
@@ -37,10 +50,12 @@ const AIMS_TIPS = [
   "Most speeches land well at 130–160 words per minute.",
 ];
 
-const EMPTY_SPEECH: SpeechDraft = { title: "", text: "", file: null };
+const EMPTY_SPEECH: SpeechDraft = { title: "", text: "", file: null, source: null };
 
 function App() {
   const [screen, setScreen] = useState<Screen>("home");
+  // Where the user was before opening About Us, so they can go straight back.
+  const [screenBeforeAbout, setScreenBeforeAbout] = useState<Screen>("home");
 
   // ---- Everything the user has entered, kept here so nothing is lost between steps ----
   // Step 1 speech: frontend-only reference text. It is NOT sent to the backend.
@@ -55,6 +70,8 @@ function App() {
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [analysisError, setAnalysisError] = useState<AnalysisApiErrorInfo | null>(null);
+  // The feedback result we've already celebrated (see the confetti effect below).
+  const celebratedAnalysisRef = useRef<AnalysisResponse | null>(null);
 
   const [serverStatus, setServerStatus] = useState("checking…");
 
@@ -73,10 +90,27 @@ function App() {
     window.scrollTo(0, 0);
   }, [screen]);
 
+  // A small confetti burst when a NEW feedback result is shown. Remembering the
+  // result we celebrated means it fires once per recording: not again after
+  // visiting About Us and coming back, and not twice from React StrictMode's
+  // double-run in development.
+  useEffect(() => {
+    if (screen !== "feedback" || !analysis || celebratedAnalysisRef.current === analysis) return;
+    celebratedAnalysisRef.current = analysis;
+    celebrate();
+  }, [screen, analysis]);
+
   function goHome() {
     if (isSubmitting) return;
     setScreen("home");
     window.scrollTo(0, 0); // also scroll up if we were already on Home
+  }
+
+  /** Opens About Us without clearing anything the user has entered. */
+  function goToAbout() {
+    if (isSubmitting) return;
+    if (screen !== "about") setScreenBeforeAbout(screen);
+    setScreen("about");
   }
 
   function startFlow() {
@@ -157,6 +191,8 @@ function App() {
     <>
       <Header
         isHome={screen === "home"}
+        isAbout={screen === "about"}
+        onGoAbout={goToAbout}
         showStartButton={screen !== "speech"}
         onGoHome={goHome}
         onStart={startFlow}
@@ -164,7 +200,15 @@ function App() {
 
       {screen === "home" && <Home onStart={startFlow} />}
 
-      {screen !== "home" && (
+      {screen === "about" && (
+        <About
+          onBack={() => setScreen(screenBeforeAbout)}
+          backLabel={SCREEN_NAMES[screenBeforeAbout]}
+          onStartPractising={() => setScreen("speech")}
+        />
+      )}
+
+      {screen !== "home" && screen !== "about" && (
         <div className="app">
           <main>
             {screen === "speech" && (
@@ -172,7 +216,7 @@ function App() {
                 <StepProgress currentStep={1} />
                 <div className="page-heading">
                   <h1>Add your speech</h1>
-                  <p>Type or paste it below, or upload a document. You can edit it here at any time.</p>
+                  <p>Type or paste it below, upload a document, or describe it and we'll write one. You can edit it here at any time.</p>
                 </div>
                 <SpeechStep
                   speech={speech}
