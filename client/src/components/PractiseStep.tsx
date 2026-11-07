@@ -172,18 +172,7 @@ export default function PractiseStep({
                 <li className="chip">Duration {formatTime(attempt.durationSeconds)}</li>
               </ul>
               <div className="transcript-box">{attempt.transcript}</div>
-              {/* "Get feedback" lives at the bottom of the screen (one button for both modes). */}
-              <div className="form-actions form-actions-start">
-                <button
-                  type="button"
-                  className="button-secondary"
-                  onClick={recordAgain}
-                  disabled={isSubmitting}
-                >
-                  <RotateCcw size={16} aria-hidden="true" />
-                  Record again
-                </button>
-              </div>
+              {/* "Record again" and "Get feedback" sit together at the bottom of the screen. */}
             </section>
           ) : activeMode === "practice" ? (
             // ---------- Practice mode: teleprompter + background recognition ----------
@@ -299,16 +288,30 @@ export default function PractiseStep({
           Back
         </button>
         <div className="feedback-action">
-          <button
-            type="button"
-            className="button-primary"
-            onClick={handleGetFeedbackClick}
-            aria-disabled={!canGetFeedback}
-            aria-describedby={feedbackBlockedReason ? "feedback-hint" : undefined}
-          >
-            {isSubmitting ? "Analyzing…" : "Get feedback"}
-            {!isSubmitting && <ArrowRight size={18} aria-hidden="true" />}
-          </button>
+          <div className="practise-actions">
+            {/* Shown only once there's a recording, as before */}
+            {attempt && (
+              <button
+                type="button"
+                className="button-secondary"
+                onClick={recordAgain}
+                disabled={isSubmitting}
+              >
+                <RotateCcw size={16} aria-hidden="true" />
+                Record again
+              </button>
+            )}
+            <button
+              type="button"
+              className="button-primary"
+              onClick={handleGetFeedbackClick}
+              aria-disabled={!canGetFeedback}
+              aria-describedby={feedbackBlockedReason ? "feedback-hint" : undefined}
+            >
+              {isSubmitting ? "Analyzing…" : "Get feedback"}
+              {!isSubmitting && <ArrowRight size={18} aria-hidden="true" />}
+            </button>
+          </div>
           {feedbackBlockedReason && (
             <p id="feedback-hint" className="hint feedback-hint">
               {feedbackBlockedReason}

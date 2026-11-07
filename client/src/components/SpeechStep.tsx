@@ -33,7 +33,9 @@ interface SpeechStepProps {
 export default function SpeechStep({ speech, onSpeechChange, onContinue, onSkip }: SpeechStepProps) {
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState("");
-  const [isReading, setIsReading] = useState(false);
+  // Name of the file being read (null when not reading). PDFs can take a moment.
+  const [readingFileName, setReadingFileName] = useState<string | null>(null);
+  const isReading = readingFileName !== null;
   const [pendingFile, setPendingFile] = useState<PendingFile | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const replaceButtonRef = useRef<HTMLButtonElement>(null);
@@ -81,9 +83,9 @@ export default function SpeechStep({ speech, onSpeechChange, onContinue, onSkip 
     setError(null);
     setStatusMessage("");
     setPendingFile(null);
-    setIsReading(true);
+    setReadingFileName(file.name);
     const result = await readSpeechFile(file);
-    setIsReading(false);
+    setReadingFileName(null);
 
     if (!result.ok) {
       setError(result.message);
@@ -168,9 +170,14 @@ export default function SpeechStep({ speech, onSpeechChange, onContinue, onSkip 
               </p>
             )}
             <p className="visually-hidden" role="status">
-              {isReading ? "Reading file…" : statusMessage}
+              {isReading ? `Reading ${readingFileName}…` : statusMessage}
             </p>
-            {isReading && <p className="hint reading-note">Reading file…</p>}
+            {isReading && (
+              <p className="hint reading-note">
+                Reading {readingFileName}…
+                {readingFileName?.toLowerCase().endsWith(".pdf") && " Large PDFs can take a moment."}
+              </p>
+            )}
 
             {pendingFile && (
               <div className="replace-box" role="group" aria-labelledby="replace-heading">

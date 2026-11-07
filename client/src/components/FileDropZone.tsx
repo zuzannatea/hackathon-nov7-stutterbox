@@ -46,7 +46,7 @@ export default function FileDropZone({ onFile, onBrowse, disabled = false, descr
       </span>
       <span className="drop-zone-text">
         <span className="drop-zone-title">{isDragging ? "Drop to upload" : "Drop a file here"}</span>
-        <span className="drop-zone-hint">.txt or .docx · up to 10 MB</span>
+        <span className="drop-zone-hint">.txt, .docx or .pdf · up to 10 MB</span>
       </span>
     </button>
   );

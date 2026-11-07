@@ -1170,10 +1170,6 @@ button[aria-disabled="true"] {
 
 /* ---------- Step 3: bottom row with Back and Get feedback ---------- */
 
-.form-actions-start {
-  justify-content: flex-start;
-}
-
 .step-nav-split {
   justify-content: space-between;
   align-items: flex-start;
@@ -1184,6 +1180,15 @@ button[aria-disabled="true"] {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
+}
+
+/* "Record again" and "Get feedback" side by side; they wrap/stack when space runs out */
+.practise-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: flex-end;
 }
 
 .feedback-hint {
@@ -1203,6 +1208,11 @@ button[aria-disabled="true"] {
 
   .feedback-action {
     align-items: stretch;
+  }
+
+  /* Narrow screens: each button takes a full row (Record again on top) */
+  .practise-actions > button {
+    flex: 1 1 100%;
   }
 
   .feedback-hint {
